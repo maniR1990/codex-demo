@@ -1,187 +1,536 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react';
 import type {
   Account,
   Category,
+  ExportEvent,
   FinancialSnapshot,
+  FirebaseSyncConfig,
   Goal,
   Insight,
   MonthlyIncome,
   PlannedExpenseItem,
+  Profile,
   RecurringExpense,
+  SmartExportRule,
   Transaction
 } from '../types';
-import { dataAggregationService } from '../services/dataAggregationService';
-import { exportSnapshot, importSnapshot, loadSnapshot, persistSnapshot } from '../services/indexedDbService';
+import {
+  exportSnapshot,
+  exportSnapshotAsCsv,
+  importSnapshot,
+  loadSnapshot,
+  persistSnapshot
+} from '../services/indexedDbService';
+import { generateInsights } from '../services/insightsEngine';
+import { simulateWealthAccelerator } from '../services/wealthAcceleratorEngine';
+import { firebaseSyncService } from '../services/firebaseSyncService';
+import {
+  commitSnapshotToGit,
+  configureGitRemote,
+  exportGitRepository,
+  getGitStatus,
+  listGitHistory,
+  pushGitRemote,
+  type GitCommitOptions,
+  type GitCommitSummary,
+  type GitStatusSummary
+} from '../services/gitVersioningService';
+import { mergeSnapshots, normaliseSnapshot } from '../utils/snapshotMerge';
+
+const STORAGE_KEYS = {
+  firebase: 'wealth-accelerator-firebase-config'
+} as const;
+
+interface InitialSetupPayload {
+  currency: Profile['currency'];
+  financialStartDate: string;
+  openingBalanceNote?: string;
+  accounts: Array<Pick<Account, 'name' | 'type' | 'balance' | 'currency' | 'notes'>>;
+}
+
+interface SmartExportRulePayload {
+  name: string;
+  type: SmartExportRule['type'];
+  threshold: number;
+  target: SmartExportRule['target'];
+  gpgKeyFingerprint?: string;
+}
+
+interface GitAuthConfig {
+  username?: string;
+  password?: string;
+  token?: string;
+}
 
 interface FinancialStoreState extends FinancialSnapshot {
   isReady: boolean;
   isSyncing: boolean;
+  isInitialised: boolean;
   lastSyncedAt?: string;
+  firebaseStatus: {
+    state: 'idle' | 'connecting' | 'connected' | 'error';
+    error?: string;
+  };
+  gitStatus: GitStatusSummary & {
+    lastCommitId?: string;
+    lastCommitAt?: string;
+  };
+  gitHistory: GitCommitSummary[];
 }
-
-const defaultState: FinancialStoreState = {
-  accounts: [],
-  categories: [],
-  transactions: [],
-  monthlyIncomes: [],
-  plannedExpenses: [],
-  recurringExpenses: [],
-  goals: [],
-  insights: [],
-  wealthMetrics: {
-    capitalEfficiencyScore: 0,
-    opportunityCostAlerts: [],
-    insuranceGapAnalysis: ''
-  },
-  connections: [],
-  isReady: false,
-  isSyncing: false
-};
 
 interface FinancialStoreActions {
   refresh(): Promise<void>;
-  addCategory(payload: Omit<Category, 'id'>): Promise<Category>;
+  completeInitialSetup(payload: InitialSetupPayload): Promise<void>;
+  updateProfile(payload: Partial<Omit<Profile, 'createdAt' | 'updatedAt'>>): Promise<void>;
+  addCategory(payload: Omit<Category, 'id' | 'createdAt' | 'updatedAt' | 'isCustom'> & { isCustom?: boolean }): Promise<Category>;
   updateCategory(id: string, payload: Partial<Category>): Promise<void>;
   deleteCategory(id: string): Promise<void>;
-  addMonthlyIncome(payload: Omit<MonthlyIncome, 'id'>): Promise<MonthlyIncome>;
+  addMonthlyIncome(payload: Omit<MonthlyIncome, 'id' | 'createdAt' | 'updatedAt'>): Promise<MonthlyIncome>;
   updateMonthlyIncome(id: string, payload: Partial<MonthlyIncome>): Promise<void>;
   deleteMonthlyIncome(id: string): Promise<void>;
-  addPlannedExpense(payload: Omit<PlannedExpenseItem, 'id' | 'status'> & { status?: PlannedExpenseItem['status'] }): Promise<PlannedExpenseItem>;
+  addPlannedExpense(
+    payload: Omit<PlannedExpenseItem, 'id' | 'createdAt' | 'updatedAt' | 'status'> & {
+      status?: PlannedExpenseItem['status'];
+    }
+  ): Promise<PlannedExpenseItem>;
   updatePlannedExpense(id: string, payload: Partial<PlannedExpenseItem>): Promise<void>;
   deletePlannedExpense(id: string): Promise<void>;
-  addRecurringExpense(payload: Omit<RecurringExpense, 'id'>): Promise<RecurringExpense>;
+  addRecurringExpense(payload: Omit<RecurringExpense, 'id' | 'createdAt' | 'updatedAt'>): Promise<RecurringExpense>;
   updateRecurringExpense(id: string, payload: Partial<RecurringExpense>): Promise<void>;
   deleteRecurringExpense(id: string): Promise<void>;
-  addManualAccount(payload: Omit<Account, 'id' | 'isManual'>): Promise<Account>;
-  addManualTransaction(payload: Omit<Transaction, 'id' | 'isRecurringMatch' | 'isPlannedMatch'>): Promise<Transaction>;
-  addGoal(payload: Omit<Goal, 'id'>): Promise<Goal>;
+  addManualAccount(payload: Omit<Account, 'id' | 'createdAt' | 'updatedAt' | 'isManual'>): Promise<Account>;
+  addManualTransaction(
+    payload: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'isRecurringMatch' | 'isPlannedMatch'>
+  ): Promise<Transaction>;
+  addGoal(payload: Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>): Promise<Goal>;
+  addSmartExportRule(payload: SmartExportRulePayload): Promise<SmartExportRule>;
+  deleteSmartExportRule(id: string): Promise<void>;
   exportData(): Promise<Blob>;
+  exportDataAsCsv(): Promise<Blob>;
   importData(file: Blob): Promise<void>;
+  configureFirebase(config: FirebaseSyncConfig): Promise<void>;
+  disconnectFirebase(): void;
+  commitToGit(message: string, options?: Omit<GitCommitOptions, 'message'>): Promise<string>;
+  refreshGitHistory(): Promise<void>;
+  configureGit(remote: string, url: string): Promise<void>;
+  pushGit(remote: string, branch?: string, auth?: GitAuthConfig): Promise<void>;
+  exportGitSnapshot(): Promise<Blob>;
 }
 
 type FinancialStoreContextValue = FinancialStoreState & FinancialStoreActions;
 
 const FinancialStoreContext = createContext<FinancialStoreContextValue | undefined>(undefined);
 
+const createDefaultSnapshot = (): FinancialSnapshot => {
+  const now = new Date().toISOString();
+  return {
+    profile: null,
+    accounts: [],
+    categories: [],
+    transactions: [],
+    monthlyIncomes: [],
+    plannedExpenses: [],
+    recurringExpenses: [],
+    goals: [],
+    insights: [],
+    wealthMetrics: {
+      capitalEfficiencyScore: 0,
+      opportunityCostAlerts: [],
+      insuranceGapAnalysis: '',
+      updatedAt: now
+    },
+    smartExportRules: [],
+    exportHistory: [],
+    revision: 0,
+    lastLocalChangeAt: now
+  };
+};
+
+const deriveFromSnapshot = (snapshot: FinancialSnapshot): FinancialSnapshot => {
+  const now = new Date().toISOString();
+  const wealthMetrics = {
+    ...simulateWealthAccelerator(
+      snapshot.accounts,
+      snapshot.transactions,
+      snapshot.goals,
+      snapshot.recurringExpenses,
+      snapshot.monthlyIncomes
+    ),
+    updatedAt: now
+  };
+
+  const insights: Insight[] = generateInsights({
+    accounts: snapshot.accounts,
+    transactions: snapshot.transactions,
+    recurringExpenses: snapshot.recurringExpenses,
+    plannedExpenses: snapshot.plannedExpenses,
+    goals: snapshot.goals,
+    categories: snapshot.categories,
+    monthlyIncomes: snapshot.monthlyIncomes
+  }).map((insight) => ({
+    ...insight,
+    createdAt: insight.createdAt ?? now,
+    updatedAt: now
+  }));
+
+  return normaliseSnapshot({
+    ...snapshot,
+    wealthMetrics,
+    insights
+  });
+};
+
+const createDefaultState = (): FinancialStoreState => {
+  const snapshot = createDefaultSnapshot();
+  return {
+    ...snapshot,
+    isReady: false,
+    isSyncing: false,
+    isInitialised: false,
+    firebaseStatus: { state: 'idle' },
+    gitStatus: { head: null, remotes: [] },
+    gitHistory: []
+  };
+};
+
 export function FinancialStoreProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<FinancialStoreState>(defaultState);
+  const [state, setState] = useState<FinancialStoreState>(createDefaultState);
+  const firebaseConfigRef = useRef<FirebaseSyncConfig | null>(null);
 
   useEffect(() => {
+    let mounted = true;
     (async () => {
-      const snapshot = await loadSnapshot();
-      if (snapshot) {
-        setState((prev) => ({
-          ...prev,
-          ...snapshot,
-          monthlyIncomes: snapshot.monthlyIncomes ?? [],
-          isReady: true
-        }));
-      } else {
-        await refresh();
-      }
+      const stored = await loadSnapshot();
+      if (!mounted) return;
+      const baseSnapshot = stored ? deriveFromSnapshot(stored) : createDefaultSnapshot();
+      setState((prev) => ({
+        ...prev,
+        ...baseSnapshot,
+        isReady: true,
+        isInitialised: Boolean(baseSnapshot.profile)
+      }));
+      await refreshGitHistory();
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    return () => {
+      mounted = false;
+      firebaseSyncService.stop();
+    };
   }, []);
 
-  const toSnapshot = (state: FinancialStoreState): FinancialSnapshot => ({
-    accounts: state.accounts,
-    categories: state.categories,
-    transactions: state.transactions,
-    monthlyIncomes: state.monthlyIncomes,
-    plannedExpenses: state.plannedExpenses,
-    recurringExpenses: state.recurringExpenses,
-    goals: state.goals,
-    insights: state.insights,
-    wealthMetrics: state.wealthMetrics,
-    connections: state.connections
+  const toSnapshot = (value: FinancialStoreState): FinancialSnapshot => ({
+    profile: value.profile,
+    accounts: value.accounts,
+    categories: value.categories,
+    transactions: value.transactions,
+    monthlyIncomes: value.monthlyIncomes,
+    plannedExpenses: value.plannedExpenses,
+    recurringExpenses: value.recurringExpenses,
+    goals: value.goals,
+    insights: value.insights,
+    wealthMetrics: value.wealthMetrics,
+    smartExportRules: value.smartExportRules,
+    exportHistory: value.exportHistory,
+    revision: value.revision,
+    lastLocalChangeAt: value.lastLocalChangeAt
   });
 
-  const persistAndSet = async (updater: (state: FinancialStoreState) => FinancialStoreState) => {
+  const persistAndSet = async (
+    updater: (snapshot: FinancialSnapshot) => FinancialSnapshot,
+    options: { evaluateAutomation?: boolean } = {}
+  ) => {
+    const { evaluateAutomation = true } = options;
+    let derivedSnapshot: FinancialSnapshot | null = null;
+
     setState((prev) => {
-      const nextState = updater(prev);
-      void persistSnapshot(toSnapshot(nextState));
-      return nextState;
+      const currentSnapshot = toSnapshot(prev);
+      const updatedSnapshot = updater(currentSnapshot);
+      const nextRevision = updatedSnapshot.revision ?? currentSnapshot.revision + 1;
+      const withMeta: FinancialSnapshot = {
+        ...updatedSnapshot,
+        revision: nextRevision,
+        lastLocalChangeAt: new Date().toISOString()
+      };
+      derivedSnapshot = deriveFromSnapshot(withMeta);
+      void persistSnapshot(derivedSnapshot);
+      return {
+        ...prev,
+        ...derivedSnapshot,
+        isReady: true,
+        isInitialised: Boolean(derivedSnapshot?.profile)
+      };
     });
+
+    if (evaluateAutomation && derivedSnapshot) {
+      await evaluateSmartExports(derivedSnapshot);
+    }
+  };
+
+  const refreshGitHistory = async () => {
+    const [history, status] = await Promise.all([listGitHistory(20), getGitStatus()]);
+    setState((prev) => ({
+      ...prev,
+      gitHistory: history,
+      gitStatus: {
+        ...status,
+        lastCommitAt: prev.gitStatus.lastCommitAt,
+        lastCommitId: prev.gitStatus.lastCommitId
+      }
+    }));
+  };
+
+  const logExportEvent = async (
+    event: Omit<ExportEvent, 'id' | 'createdAt' | 'updatedAt'>
+  ) => {
+    const now = new Date().toISOString();
+    await persistAndSet(
+      (snapshot) => ({
+        ...snapshot,
+        exportHistory: [
+          ...snapshot.exportHistory,
+          {
+            id: crypto.randomUUID(),
+            createdAt: now,
+            updatedAt: now,
+            ...event
+          }
+        ]
+      }),
+      { evaluateAutomation: false }
+    );
+  };
+
+  const evaluateSmartExports = async (snapshot: FinancialSnapshot) => {
+    for (const rule of snapshot.smartExportRules) {
+      if (rule.target !== 'git') continue;
+      if (rule.type === 'weekly') {
+        const lastTrigger = rule.lastTriggeredAt ? new Date(rule.lastTriggeredAt).getTime() : 0;
+        const thresholdMs = rule.threshold * 24 * 60 * 60 * 1000;
+        if (Date.now() - lastTrigger < thresholdMs) continue;
+        await automateGitCommit(rule, snapshot, `Automated weekly export (${rule.threshold} day cadence)`);
+      } else if (rule.type === 'transaction-count') {
+        const lastEvent = [...snapshot.exportHistory]
+          .filter((entry) => entry.ruleId === rule.id && entry.medium === 'git')
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+        const baseline = lastEvent?.context?.startsWith('transactions=')
+          ? Number(lastEvent.context.replace('transactions=', ''))
+          : 0;
+        const diff = snapshot.transactions.length - baseline;
+        if (diff < rule.threshold) continue;
+        await automateGitCommit(
+          rule,
+          snapshot,
+          `Automated export after ${rule.threshold} transactions`,
+          `transactions=${snapshot.transactions.length}`
+        );
+      }
+    }
+  };
+
+  const automateGitCommit = async (
+    rule: SmartExportRule,
+    snapshot: FinancialSnapshot,
+    message: string,
+    context?: string
+  ) => {
+    const oid = await commitSnapshotToGit(snapshot, {
+      message,
+      encrypt: Boolean(rule.gpgKeyFingerprint),
+      keyFingerprint: rule.gpgKeyFingerprint
+    });
+    const now = new Date().toISOString();
+    await persistAndSet(
+      (current) => ({
+        ...current,
+        smartExportRules: current.smartExportRules.map((item) =>
+          item.id === rule.id
+            ? {
+                ...item,
+                lastTriggeredAt: now,
+                updatedAt: now
+              }
+            : item
+        ),
+        exportHistory: [
+          ...current.exportHistory,
+          {
+            id: crypto.randomUUID(),
+            trigger: 'automation',
+            medium: 'git',
+            format: 'git',
+            ruleId: rule.id,
+            context,
+            createdAt: now,
+            updatedAt: now
+          }
+        ]
+      }),
+      { evaluateAutomation: false }
+    );
+    setState((prev) => ({
+      ...prev,
+      gitStatus: {
+        ...prev.gitStatus,
+        lastCommitId: oid,
+        lastCommitAt: now
+      }
+    }));
+    await refreshGitHistory();
   };
 
   const refresh = async () => {
     setState((prev) => ({ ...prev, isSyncing: true }));
-    const snapshot = await dataAggregationService.aggregate({
-      manualAccounts: state.accounts.filter((acct) => acct.isManual),
-      manualTransactions: state.transactions.filter(
-        (txn) => txn.accountId !== 'acct-hdfc-savings' && txn.accountId !== 'acct-zerodha-invest'
-      ),
-      manualCategories: state.categories.filter((cat) => cat.isCustom),
-      manualMonthlyIncomes: state.monthlyIncomes.filter((income) => income.id.startsWith('custom-'))
+    const currentSnapshot = deriveFromSnapshot(toSnapshot(state));
+    await persistSnapshot(currentSnapshot);
+    if (firebaseConfigRef.current) {
+      const remote = await firebaseSyncService.fetchRemoteSnapshot();
+      if (remote) {
+        const merged = mergeSnapshots(currentSnapshot, remote);
+        await persistSnapshot(merged);
+        setState((prev) => ({
+          ...prev,
+          ...merged,
+          isSyncing: false,
+          isInitialised: Boolean(merged.profile),
+          lastSyncedAt: new Date().toISOString()
+        }));
+        return;
+      }
+    }
+    setState((prev) => ({
+      ...prev,
+      ...currentSnapshot,
+      isSyncing: false,
+      lastSyncedAt: new Date().toISOString()
+    }));
+  };
+
+  const completeInitialSetup: FinancialStoreActions['completeInitialSetup'] = async (payload) => {
+    await persistAndSet((snapshot) => {
+      const now = new Date().toISOString();
+      const profile: Profile = {
+        currency: payload.currency,
+        financialStartDate: payload.financialStartDate,
+        openingBalanceNote: payload.openingBalanceNote,
+        createdAt: now,
+        updatedAt: now
+      };
+      const accounts: Account[] = [
+        ...snapshot.accounts,
+        ...payload.accounts.map((account) => ({
+          ...account,
+          id: crypto.randomUUID(),
+          isManual: true,
+          createdAt: now,
+          updatedAt: now
+        }))
+      ];
+      return {
+        ...snapshot,
+        profile,
+        accounts
+      };
     });
-    setState((prev) => ({ ...prev, ...snapshot, isReady: true, isSyncing: false, lastSyncedAt: new Date().toISOString() }));
+  };
+
+  const updateProfile: FinancialStoreActions['updateProfile'] = async (payload) => {
+    await persistAndSet((snapshot) => {
+      const now = new Date().toISOString();
+      const existing = snapshot.profile ?? {
+        currency: payload.currency ?? 'INR',
+        financialStartDate: payload.financialStartDate ?? now,
+        createdAt: now,
+        updatedAt: now
+      };
+      const profile: Profile = {
+        ...existing,
+        ...payload,
+        updatedAt: now
+      };
+      return {
+        ...snapshot,
+        profile
+      };
+    });
   };
 
   const addCategory: FinancialStoreActions['addCategory'] = async (payload) => {
-    const newCategory: Category = {
+    const now = new Date().toISOString();
+    const category: Category = {
       ...payload,
       id: crypto.randomUUID(),
-      isCustom: true
+      isCustom: payload.isCustom ?? true,
+      createdAt: now,
+      updatedAt: now
     };
-    await persistAndSet((prev) => ({
-      ...prev,
-      categories: [...prev.categories, newCategory]
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      categories: [...snapshot.categories, category]
     }));
-    return newCategory;
+    return category;
   };
 
   const updateCategory: FinancialStoreActions['updateCategory'] = async (id, payload) => {
-    await persistAndSet((prev) => ({
-      ...prev,
-      categories: prev.categories.map((category) => (category.id === id ? { ...category, ...payload } : category))
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      categories: snapshot.categories.map((category) =>
+        category.id === id
+          ? {
+              ...category,
+              ...payload,
+              updatedAt: new Date().toISOString()
+            }
+          : category
+      )
     }));
   };
 
   const deleteCategory: FinancialStoreActions['deleteCategory'] = async (id) => {
-    await persistAndSet((prev) => {
-      const remainingCategories = prev.categories.filter((category) => category.id !== id);
-      const deletedCategory = prev.categories.find((category) => category.id === id);
-      let fallbackCategory =
-        remainingCategories.find((category) => category.type === (deletedCategory?.type ?? 'expense')) ??
-        remainingCategories[0];
-      const categories = [...remainingCategories];
-      if (!fallbackCategory) {
-        fallbackCategory = {
+    await persistAndSet((snapshot) => {
+      const remaining = snapshot.categories.filter((category) => category.id !== id);
+      const deleted = snapshot.categories.find((category) => category.id === id);
+      let fallback =
+        remaining.find((category) => category.type === (deleted?.type ?? 'expense')) ?? remaining[0];
+      const categories = [...remaining];
+      if (!fallback) {
+        const now = new Date().toISOString();
+        fallback = {
           id: crypto.randomUUID(),
           name: 'Uncategorised',
-          type: deletedCategory?.type ?? 'expense',
-          isCustom: true
+          type: deleted?.type ?? 'expense',
+          isCustom: true,
+          createdAt: now,
+          updatedAt: now
         } satisfies Category;
-        categories.push(fallbackCategory);
+        categories.push(fallback);
       }
       return {
-        ...prev,
+        ...snapshot,
         categories,
-        transactions: prev.transactions.map((txn) =>
-          txn.categoryId === id ? { ...txn, categoryId: undefined } : txn
+        transactions: snapshot.transactions.map((txn) =>
+          txn.categoryId === id ? { ...txn, categoryId: undefined, updatedAt: new Date().toISOString() } : txn
         ),
-        plannedExpenses: prev.plannedExpenses.map((item) =>
+        plannedExpenses: snapshot.plannedExpenses.map((item) =>
           item.categoryId === id
-            ? {
-                ...item,
-                categoryId: fallbackCategory.id
-              }
+            ? { ...item, categoryId: fallback!.id, updatedAt: new Date().toISOString() }
             : item
         ),
-        recurringExpenses: prev.recurringExpenses.map((item) =>
+        recurringExpenses: snapshot.recurringExpenses.map((item) =>
           item.categoryId === id
-            ? {
-                ...item,
-                categoryId: fallbackCategory.id
-              }
+            ? { ...item, categoryId: fallback!.id, updatedAt: new Date().toISOString() }
             : item
         ),
-        monthlyIncomes: prev.monthlyIncomes.map((income) =>
+        monthlyIncomes: snapshot.monthlyIncomes.map((income) =>
           income.categoryId === id
-            ? {
-                ...income,
-                categoryId: fallbackCategory.id
-              }
+            ? { ...income, categoryId: fallback!.id, updatedAt: new Date().toISOString() }
             : income
         )
       };
@@ -189,135 +538,308 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
   };
 
   const addMonthlyIncome: FinancialStoreActions['addMonthlyIncome'] = async (payload) => {
-    const newIncome: MonthlyIncome = {
+    const now = new Date().toISOString();
+    const income: MonthlyIncome = {
       ...payload,
-      id: `custom-${crypto.randomUUID()}`
+      id: `income-${crypto.randomUUID()}`,
+      createdAt: now,
+      updatedAt: now
     };
-    await persistAndSet((prev) => ({
-      ...prev,
-      monthlyIncomes: [...prev.monthlyIncomes, newIncome]
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      monthlyIncomes: [...snapshot.monthlyIncomes, income]
     }));
-    return newIncome;
+    return income;
   };
 
   const updateMonthlyIncome: FinancialStoreActions['updateMonthlyIncome'] = async (id, payload) => {
-    await persistAndSet((prev) => ({
-      ...prev,
-      monthlyIncomes: prev.monthlyIncomes.map((income) => (income.id === id ? { ...income, ...payload } : income))
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      monthlyIncomes: snapshot.monthlyIncomes.map((income) =>
+        income.id === id
+          ? {
+              ...income,
+              ...payload,
+              updatedAt: new Date().toISOString()
+            }
+          : income
+      )
     }));
   };
 
   const deleteMonthlyIncome: FinancialStoreActions['deleteMonthlyIncome'] = async (id) => {
-    await persistAndSet((prev) => ({
-      ...prev,
-      monthlyIncomes: prev.monthlyIncomes.filter((income) => income.id !== id)
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      monthlyIncomes: snapshot.monthlyIncomes.filter((income) => income.id !== id)
     }));
   };
 
   const addPlannedExpense: FinancialStoreActions['addPlannedExpense'] = async (payload) => {
-    const newItem: PlannedExpenseItem = {
+    const now = new Date().toISOString();
+    const item: PlannedExpenseItem = {
+      ...payload,
       id: crypto.randomUUID(),
       status: payload.status ?? 'pending',
-      ...payload
+      createdAt: now,
+      updatedAt: now
     };
-    await persistAndSet((prev) => ({
-      ...prev,
-      plannedExpenses: [...prev.plannedExpenses, newItem]
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      plannedExpenses: [...snapshot.plannedExpenses, item]
     }));
-    return newItem;
+    return item;
   };
 
   const updatePlannedExpense: FinancialStoreActions['updatePlannedExpense'] = async (id, payload) => {
-    await persistAndSet((prev) => ({
-      ...prev,
-      plannedExpenses: prev.plannedExpenses.map((item) => (item.id === id ? { ...item, ...payload } : item))
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      plannedExpenses: snapshot.plannedExpenses.map((expense) =>
+        expense.id === id
+          ? {
+              ...expense,
+              ...payload,
+              updatedAt: new Date().toISOString()
+            }
+          : expense
+      )
     }));
   };
 
   const deletePlannedExpense: FinancialStoreActions['deletePlannedExpense'] = async (id) => {
-    await persistAndSet((prev) => ({
-      ...prev,
-      plannedExpenses: prev.plannedExpenses.filter((item) => item.id !== id)
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      plannedExpenses: snapshot.plannedExpenses.filter((expense) => expense.id !== id)
     }));
   };
 
   const addRecurringExpense: FinancialStoreActions['addRecurringExpense'] = async (payload) => {
-    const newItem: RecurringExpense = { id: crypto.randomUUID(), ...payload };
-    await persistAndSet((prev) => ({
-      ...prev,
-      recurringExpenses: [...prev.recurringExpenses, newItem]
+    const now = new Date().toISOString();
+    const expense: RecurringExpense = {
+      ...payload,
+      id: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now
+    };
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      recurringExpenses: [...snapshot.recurringExpenses, expense]
     }));
-    return newItem;
+    return expense;
   };
 
   const updateRecurringExpense: FinancialStoreActions['updateRecurringExpense'] = async (id, payload) => {
-    await persistAndSet((prev) => ({
-      ...prev,
-      recurringExpenses: prev.recurringExpenses.map((item) => (item.id === id ? { ...item, ...payload } : item))
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      recurringExpenses: snapshot.recurringExpenses.map((expense) =>
+        expense.id === id
+          ? {
+              ...expense,
+              ...payload,
+              updatedAt: new Date().toISOString()
+            }
+          : expense
+      )
     }));
   };
 
   const deleteRecurringExpense: FinancialStoreActions['deleteRecurringExpense'] = async (id) => {
-    await persistAndSet((prev) => ({
-      ...prev,
-      recurringExpenses: prev.recurringExpenses.filter((item) => item.id !== id)
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      recurringExpenses: snapshot.recurringExpenses.filter((expense) => expense.id !== id)
     }));
   };
 
   const addManualAccount: FinancialStoreActions['addManualAccount'] = async (payload) => {
-    const newAccount: Account = {
+    const now = new Date().toISOString();
+    const account: Account = {
       ...payload,
       id: crypto.randomUUID(),
-      isManual: true
+      isManual: true,
+      createdAt: now,
+      updatedAt: now
     };
-    await persistAndSet((prev) => ({
-      ...prev,
-      accounts: [...prev.accounts, newAccount]
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      accounts: [...snapshot.accounts, account]
     }));
-    return newAccount;
+    return account;
   };
 
   const addManualTransaction: FinancialStoreActions['addManualTransaction'] = async (payload) => {
-    const newTransaction: Transaction = {
+    const now = new Date().toISOString();
+    const transaction: Transaction = {
       ...payload,
-      id: crypto.randomUUID()
+      id: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now
     };
-    await persistAndSet((prev) => ({
-      ...prev,
-      transactions: [...prev.transactions, newTransaction]
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      transactions: [...snapshot.transactions, transaction]
     }));
-    return newTransaction;
+    return transaction;
   };
 
   const addGoal: FinancialStoreActions['addGoal'] = async (payload) => {
-    const newGoal: Goal = {
+    const now = new Date().toISOString();
+    const goal: Goal = {
       ...payload,
-      id: crypto.randomUUID()
+      id: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now
     };
-    await persistAndSet((prev) => ({
-      ...prev,
-      goals: [...prev.goals, newGoal]
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      goals: [...snapshot.goals, goal]
     }));
-    return newGoal;
+    return goal;
   };
 
-  const exportData = async () => exportSnapshot();
+  const addSmartExportRule: FinancialStoreActions['addSmartExportRule'] = async (payload) => {
+    const now = new Date().toISOString();
+    const rule: SmartExportRule = {
+      id: crypto.randomUUID(),
+      name: payload.name,
+      type: payload.type,
+      threshold: payload.threshold,
+      target: payload.target,
+      gpgKeyFingerprint: payload.gpgKeyFingerprint,
+      createdAt: now,
+      updatedAt: now,
+      lastTriggeredAt: undefined
+    };
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      smartExportRules: [...snapshot.smartExportRules, rule]
+    }),
+    { evaluateAutomation: false });
+    return rule;
+  };
 
-  const importData = async (file: Blob) => {
+  const deleteSmartExportRule: FinancialStoreActions['deleteSmartExportRule'] = async (id) => {
+    await persistAndSet(
+      (snapshot) => ({
+        ...snapshot,
+        smartExportRules: snapshot.smartExportRules.filter((rule) => rule.id !== id)
+      }),
+      { evaluateAutomation: false }
+    );
+  };
+
+  const exportData: FinancialStoreActions['exportData'] = async () => {
+    const blob = await exportSnapshot();
+    await logExportEvent({ trigger: 'manual', medium: 'file', format: 'json' });
+    return blob;
+  };
+
+  const exportDataAsCsvAction: FinancialStoreActions['exportDataAsCsv'] = async () => {
+    const blob = await exportSnapshotAsCsv();
+    await logExportEvent({ trigger: 'manual', medium: 'file', format: 'csv' });
+    return blob;
+  };
+
+  const importDataAction: FinancialStoreActions['importData'] = async (file) => {
     const snapshot = await importSnapshot(file);
+    const derived = deriveFromSnapshot(snapshot);
+    await persistSnapshot(derived);
     setState((prev) => ({
       ...prev,
-      ...snapshot,
-      monthlyIncomes: snapshot.monthlyIncomes ?? [],
+      ...derived,
       isReady: true,
-      lastSyncedAt: new Date().toISOString()
+      isInitialised: Boolean(derived.profile)
     }));
   };
 
-  const value = useMemo<FinancialStoreContextValue>(
+  const configureFirebase: FinancialStoreActions['configureFirebase'] = async (config) => {
+    firebaseConfigRef.current = config;
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(STORAGE_KEYS.firebase, JSON.stringify(config));
+    }
+    setState((prev) => ({ ...prev, firebaseStatus: { state: 'connecting' } }));
+    await firebaseSyncService.configure(config, {
+      onStatusChange(status, error) {
+        setState((prev) => ({
+          ...prev,
+          firebaseStatus: { state: status, error: error?.message }
+        }));
+      },
+      onRemoteSnapshot(remote) {
+        setState((prev) => {
+          const merged = mergeSnapshots(toSnapshot(prev), remote);
+          void persistSnapshot(merged);
+          return {
+            ...prev,
+            ...merged,
+            isInitialised: Boolean(merged.profile),
+            lastSyncedAt: new Date().toISOString(),
+            firebaseStatus: { state: 'connected' }
+          };
+        });
+      }
+    });
+  };
+
+  const disconnectFirebase = () => {
+    firebaseSyncService.stop();
+    firebaseConfigRef.current = null;
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(STORAGE_KEYS.firebase);
+    }
+    setState((prev) => ({ ...prev, firebaseStatus: { state: 'idle' } }));
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = window.localStorage.getItem(STORAGE_KEYS.firebase);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as FirebaseSyncConfig;
+        void configureFirebase(parsed);
+      } catch {
+        window.localStorage.removeItem(STORAGE_KEYS.firebase);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const commitToGit: FinancialStoreActions['commitToGit'] = async (message, options) => {
+    const snapshot = deriveFromSnapshot(toSnapshot(state));
+    const oid = await commitSnapshotToGit(snapshot, { message, ...options });
+    const now = new Date().toISOString();
+    await logExportEvent({ trigger: 'manual', medium: 'git', format: 'git', context: message });
+    setState((prev) => ({
+      ...prev,
+      gitStatus: {
+        ...prev.gitStatus,
+        lastCommitId: oid,
+        lastCommitAt: now
+      }
+    }));
+    await refreshGitHistory();
+    return oid;
+  };
+
+  const configureGitAction: FinancialStoreActions['configureGit'] = async (remote, url) => {
+    await configureGitRemote(remote, url);
+    await refreshGitHistory();
+  };
+
+  const pushGitAction: FinancialStoreActions['pushGit'] = async (remote, branch = 'main', auth) => {
+    await pushGitRemote(remote, branch, auth);
+  };
+
+  const exportGitSnapshot: FinancialStoreActions['exportGitSnapshot'] = async () => {
+    const blob = await exportGitRepository();
+    await logExportEvent({ trigger: 'manual', medium: 'git', format: 'git', context: 'git-export' });
+    return blob;
+  };
+
+  const contextValue = useMemo<FinancialStoreContextValue>(
     () => ({
       ...state,
       refresh,
+      completeInitialSetup,
+      updateProfile,
       addCategory,
       updateCategory,
       deleteCategory,
@@ -333,13 +855,23 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       addManualAccount,
       addManualTransaction,
       addGoal,
+      addSmartExportRule,
+      deleteSmartExportRule,
       exportData,
-      importData
+      exportDataAsCsv: exportDataAsCsvAction,
+      importData: importDataAction,
+      configureFirebase,
+      disconnectFirebase,
+      commitToGit,
+      refreshGitHistory,
+      configureGit: configureGitAction,
+      pushGit: pushGitAction,
+      exportGitSnapshot
     }),
     [state]
   );
 
-  return <FinancialStoreContext.Provider value={value}>{children}</FinancialStoreContext.Provider>;
+  return <FinancialStoreContext.Provider value={contextValue}>{children}</FinancialStoreContext.Provider>;
 }
 
 export function useFinancialStore() {

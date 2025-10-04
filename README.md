@@ -1,6 +1,6 @@
 # Wealth Accelerator PWA
 
-An offline-first Progressive Web App that aggregates Indian financial data, delivers AI-assisted categorisation, and provides executive dashboards for cash flow, budgeting, and wealth acceleration.
+An offline-first Progressive Web App for Indian households and founders that keeps every feature 100% free, honours user-entered data, and delivers executive-grade insights without relying on paid tiers or synthetic feeds.
 
 ## Getting started
 
@@ -28,11 +28,26 @@ npm run lint
 npm run test
 ```
 
-## Key capabilities
+## Core mandates
 
-- Secure aggregation layer with mock Plaid/Yodlee connectors and AI-driven transaction categorisation.
-- Manual capture flows for accounts, transactions, and bespoke income/expense categories.
-- CEO dashboard with net worth, KPI widgets, spending intelligence, and encrypted data export/import controls.
-- Unified balance sheet, trend analysis, smart budgeting for variable spends, and a recurring expense hub.
-- Goal planning simulator, actionable insights engine, and premium Wealth Accelerator metrics.
-- IndexedDB persistence with AES-GCM encryption, PWA manifest, and service worker caching for full offline support.
+- **User cost:** No subscriptions or premium tiers — every capability is accessible to every user.
+- **Monetisation:** Non user-paid — optional ethical affiliate suggestions and anonymised trend insights (when explicitly enabled) keep the platform sustainable without selling personal data.
+- **Data integrity:** Every record originates from manual entry. There are no synthetic accounts, no bank APIs, and no background enrichment.
+
+## Platform capabilities
+
+- **Phase 1 · Offline data engine**
+  - Initial setup wizard that captures currency, start date, and opening balances with zero assumptions.
+  - Encrypted IndexedDB snapshot storage with manual JSON/CSV exports and restores.
+  - Optional Firebase Authentication + Firestore sync (custom token or anonymous) with conflict-aware merges.
+  - Git-linked versioning powered by `isomorphic-git`, including encrypted commits, remote pushes, and automated export rules.
+- **Phase 2 · CEO dashboard & analytics**
+  - Unified dashboard covering net worth, savings rate, spending trends, and recent activity.
+  - Editable balance sheet, trend analysis, smart budgeting, and recurring expense hub tailored for Indian formats.
+  - Insights engine that generates timestamped nudges (e.g., leverage risk, income categorisation gaps).
+- **Phase 3 · Intelligence & forward planning**
+  - Goal simulator, wealth optimisation insights, and context-aware (ethical) affiliate nudges when surplus cash is detected.
+  - Smart export automation rules (weekly cadence or transaction thresholds) that trigger encrypted Git commits.
+- **Phase 4 · Security & transparency**
+  - AES-GCM encryption for local snapshots, HTTPS transport, and a Git audit trail for power users.
+  - In-app visibility of data residency (device, Firebase, Git) so users always know where their ledger lives.

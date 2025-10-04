@@ -22,6 +22,7 @@ interface InsightInput {
 
 export function generateInsights(input: InsightInput): Insight[] {
   const insights: Insight[] = [];
+  const now = new Date().toISOString();
 
   const totalIncomeFromTransactions = input.transactions
     .filter((txn) => txn.amount > 0)
@@ -38,7 +39,9 @@ export function generateInsights(input: InsightInput): Insight[] {
       id: 'insight-savings-rate',
       title: 'Savings Rate Check',
       description: `Your savings rate is ${savingsRate.toFixed(1)}%. Consider targeting 40%+ to accelerate investments.`,
-      severity: savingsRate < 30 ? 'warning' : 'info'
+      severity: savingsRate < 30 ? 'warning' : 'info',
+      createdAt: now,
+      updatedAt: now
     });
   }
 
@@ -54,7 +57,9 @@ export function generateInsights(input: InsightInput): Insight[] {
       id: 'insight-next-recurring',
       title: 'Upcoming recurring payment',
       description: `${nextRecurring.name} is due soon at ₹${nextRecurring.amount.toLocaleString('en-IN')}. Ensure the budget is allocated.`,
-      severity: 'info'
+      severity: 'info',
+      createdAt: now,
+      updatedAt: now
     });
   }
 
@@ -65,7 +70,9 @@ export function generateInsights(input: InsightInput): Insight[] {
       id: 'insight-planned-spend',
       title: 'Review planned variable expenses',
       description: `You have ₹${totalPlanned.toLocaleString('en-IN')} of planned spends. Consider staggering purchases to reduce cash flow stress.`,
-      severity: 'warning'
+      severity: 'warning',
+      createdAt: now,
+      updatedAt: now
     });
   }
 
@@ -78,7 +85,9 @@ export function generateInsights(input: InsightInput): Insight[] {
       id: 'insight-liability-check',
       title: 'High leverage detected',
       description: 'Loan balances are more than 50% of liquid assets. Consider accelerating repayments.',
-      severity: 'critical'
+      severity: 'critical',
+      createdAt: now,
+      updatedAt: now
     });
   }
 
@@ -88,7 +97,9 @@ export function generateInsights(input: InsightInput): Insight[] {
       id: 'insight-custom-expense',
       title: 'Custom expense categories in use',
       description: `You are tracking ${customExpenseCategories.length} custom expense categories. Continue refining to improve AI recommendations.`,
-      severity: 'info'
+      severity: 'info',
+      createdAt: now,
+      updatedAt: now
     });
   }
 
@@ -98,7 +109,9 @@ export function generateInsights(input: InsightInput): Insight[] {
       id: 'insight-income-categorisation',
       title: 'Categorise income streams',
       description: `${uncoveredIncome.length} income entries are uncategorised. Tag them to align tax planning and savings goals.`,
-      severity: 'warning'
+      severity: 'warning',
+      createdAt: now,
+      updatedAt: now
     });
   }
 

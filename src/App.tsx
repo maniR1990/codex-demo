@@ -10,6 +10,7 @@ import { GoalSimulatorView } from './views/GoalSimulatorView';
 import { InsightsView } from './views/InsightsView';
 import { WealthAcceleratorView } from './views/WealthAcceleratorView';
 import { OfflineSyncStatus } from './components/OfflineSyncStatus';
+import { InitialSetupDialog } from './components/InitialSetupDialog';
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
@@ -25,7 +26,7 @@ export default function App() {
   }, [location.pathname]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="relative min-h-screen bg-slate-950 text-slate-100">
       <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 md:flex-row md:items-center md:justify-between">
           <div className="flex w-full flex-col gap-4 md:flex-row md:items-center md:gap-6">
@@ -83,7 +84,7 @@ export default function App() {
             Actionable Insights
           </NavLink>
           <NavLink to="/accelerator" className={navLinkClass}>
-            Wealth Accelerator (Premium)
+            Wealth Accelerator Intelligence
           </NavLink>
         </nav>
         <main className="flex-1 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg sm:p-6">
@@ -100,6 +101,7 @@ export default function App() {
           </Routes>
         </main>
       </div>
+      <InitialSetupDialog />
     </div>
   );
 }

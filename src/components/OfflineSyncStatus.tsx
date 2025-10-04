@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useFinancialStore } from '../store/FinancialStoreProvider';
 
 export function OfflineSyncStatus() {
-  const { isSyncing, lastSyncedAt, refresh } = useFinancialStore();
+  const { isSyncing, lastSyncedAt, refresh, firebaseStatus } = useFinancialStore();
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
 
   useEffect(() => {
@@ -24,10 +24,12 @@ export function OfflineSyncStatus() {
         <p className="font-medium">{isOnline ? 'Online' : 'Offline Mode'}</p>
         <p className="text-xs text-slate-400">
           {isSyncing
-            ? 'Syncing with secure aggregator...'
-            : lastSyncedAt
-              ? `Last synced ${new Date(lastSyncedAt).toLocaleString('en-IN')}`
-              : 'Local snapshot active'}
+            ? 'Encrypting & syncing your ledger...'
+            : firebaseStatus.state === 'connected'
+              ? `Linked to Firebase • Last sync ${lastSyncedAt ? new Date(lastSyncedAt).toLocaleString('en-IN') : 'pending'}`
+              : lastSyncedAt
+                ? `Local snapshot last saved ${new Date(lastSyncedAt).toLocaleString('en-IN')}`
+                : 'Local-first mode active'}
         </p>
       </div>
       <button

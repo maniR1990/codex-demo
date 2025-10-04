@@ -2,16 +2,18 @@ export type Currency = 'INR' | 'USD' | 'EUR' | 'GBP' | 'SGD';
 
 export type Frequency = 'Monthly' | 'Quarterly' | 'Annually' | 'Weekly' | 'Daily';
 
-export interface FinancialInstitutionConnection {
-  id: string;
-  provider: 'Plaid' | 'Yodlee';
-  institutionName: string;
-  country: 'IN' | 'US' | 'UK' | 'SG';
-  lastSyncedAt?: string;
-  status: 'connected' | 'error' | 'pending';
+export interface Timestamped {
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface Account {
+export interface Profile extends Timestamped {
+  currency: Currency;
+  financialStartDate: string;
+  openingBalanceNote?: string;
+}
+
+export interface Account extends Timestamped {
   id: string;
   name: string;
   type: 'bank' | 'investment' | 'loan' | 'credit-card' | 'cash' | 'real-estate' | 'other';
@@ -19,9 +21,10 @@ export interface Account {
   currency: Currency;
   institutionId?: string;
   isManual: boolean;
+  notes?: string;
 }
 
-export interface Category {
+export interface Category extends Timestamped {
   id: string;
   name: string;
   type: 'income' | 'expense' | 'asset' | 'liability';
@@ -29,7 +32,7 @@ export interface Category {
   parentId?: string;
 }
 
-export interface Transaction {
+export interface Transaction extends Timestamped {
   id: string;
   accountId: string;
   amount: number;
@@ -39,9 +42,10 @@ export interface Transaction {
   categoryId?: string;
   isRecurringMatch?: boolean;
   isPlannedMatch?: boolean;
+  notes?: string;
 }
 
-export interface PlannedExpenseItem {
+export interface PlannedExpenseItem extends Timestamped {
   id: string;
   name: string;
   plannedAmount: number;
@@ -51,7 +55,7 @@ export interface PlannedExpenseItem {
   notes?: string;
 }
 
-export interface RecurringExpense {
+export interface RecurringExpense extends Timestamped {
   id: string;
   name: string;
   amount: number;
@@ -63,7 +67,7 @@ export interface RecurringExpense {
   nextDueDate?: string;
 }
 
-export interface MonthlyIncome {
+export interface MonthlyIncome extends Timestamped {
   id: string;
   source: string;
   amount: number;
@@ -72,7 +76,7 @@ export interface MonthlyIncome {
   notes?: string;
 }
 
-export interface Goal {
+export interface Goal extends Timestamped {
   id: string;
   name: string;
   targetAmount: number;
@@ -81,7 +85,7 @@ export interface Goal {
   categoryId: string;
 }
 
-export interface Insight {
+export interface Insight extends Timestamped {
   id: string;
   title: string;
   description: string;
@@ -92,9 +96,40 @@ export interface WealthAcceleratorMetrics {
   capitalEfficiencyScore: number; // 0-100
   opportunityCostAlerts: string[];
   insuranceGapAnalysis: string;
+  updatedAt: string;
+}
+
+export interface SmartExportRule extends Timestamped {
+  id: string;
+  name: string;
+  type: 'weekly' | 'transaction-count';
+  threshold: number;
+  target: 'git' | 'file';
+  gpgKeyFingerprint?: string;
+  lastTriggeredAt?: string;
+}
+
+export interface ExportEvent extends Timestamped {
+  id: string;
+  ruleId?: string;
+  trigger: 'manual' | 'automation';
+  medium: 'file' | 'git';
+  format: 'json' | 'csv' | 'git';
+  context?: string;
+}
+
+export interface FirebaseSyncConfig {
+  apiKey: string;
+  appId: string;
+  projectId: string;
+  authDomain?: string;
+  databaseURL?: string;
+  useCustomToken?: boolean;
+  customToken?: string;
 }
 
 export interface FinancialSnapshot {
+  profile: Profile | null;
   accounts: Account[];
   categories: Category[];
   transactions: Transaction[];
@@ -104,5 +139,8 @@ export interface FinancialSnapshot {
   goals: Goal[];
   insights: Insight[];
   wealthMetrics: WealthAcceleratorMetrics;
-  connections: FinancialInstitutionConnection[];
+  smartExportRules: SmartExportRule[];
+  exportHistory: ExportEvent[];
+  revision: number;
+  lastLocalChangeAt: string;
 }

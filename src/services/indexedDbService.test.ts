@@ -1,13 +1,21 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openDB } from 'idb';
 import { webcrypto } from 'node:crypto';
 import type { FinancialSnapshot } from '../types';
 import { decryptData, loadSnapshot, persistSnapshot } from './indexedDbService';
 
 const DB_NAME = 'wealth-accelerator-db';
+const DB_VERSION = 4;
 
-const baseSnapshot: FinancialSnapshot = {
+const buildSnapshot = (timestamp: string): FinancialSnapshot => ({
+  profile: {
+    currency: 'INR',
+    financialStartDate: '2024-01-01',
+    openingBalanceNote: 'Initial import',
+    createdAt: timestamp,
+    updatedAt: timestamp
+  },
   accounts: [
     {
       id: 'acct-1',
@@ -16,12 +24,14 @@ const baseSnapshot: FinancialSnapshot = {
       type: 'bank',
       currency: 'INR',
       institutionId: 'sample-bank',
-      isManual: true
+      isManual: true,
+      createdAt: timestamp,
+      updatedAt: timestamp
     }
   ],
   categories: [
-    { id: 'cat-1', name: 'Salary', type: 'income', isCustom: true },
-    { id: 'cat-2', name: 'Rent', type: 'expense', isCustom: true }
+    { id: 'cat-1', name: 'Salary', type: 'income', isCustom: true, createdAt: timestamp, updatedAt: timestamp },
+    { id: 'cat-2', name: 'Rent', type: 'expense', isCustom: true, createdAt: timestamp, updatedAt: timestamp }
   ],
   transactions: [
     {
@@ -29,9 +39,11 @@ const baseSnapshot: FinancialSnapshot = {
       accountId: 'acct-1',
       amount: 50000,
       currency: 'INR',
-      date: new Date().toISOString(),
+      date: timestamp,
       description: 'Monthly salary',
-      categoryId: 'cat-1'
+      categoryId: 'cat-1',
+      createdAt: timestamp,
+      updatedAt: timestamp
     }
   ],
   monthlyIncomes: [
@@ -40,22 +52,42 @@ const baseSnapshot: FinancialSnapshot = {
       source: 'Salary',
       amount: 50000,
       categoryId: 'cat-1',
-      receivedOn: new Date().toISOString()
+      receivedOn: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
     }
   ],
   plannedExpenses: [],
   recurringExpenses: [],
   goals: [],
-  insights: [],
+  insights: [
+    {
+      id: 'insight-1',
+      title: 'Savings Rate Check',
+      description: 'Sample insight',
+      severity: 'info',
+      createdAt: timestamp,
+      updatedAt: timestamp
+    }
+  ],
   wealthMetrics: {
     capitalEfficiencyScore: 80,
     opportunityCostAlerts: [],
-    insuranceGapAnalysis: ''
+    insuranceGapAnalysis: '',
+    updatedAt: timestamp
   },
-  connections: []
-};
+  smartExportRules: [],
+  exportHistory: [],
+  revision: 1,
+  lastLocalChangeAt: timestamp
+});
+
+let baseSnapshot: FinancialSnapshot;
 
 beforeEach(async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2024-01-01T00:00:00.000Z'));
+  baseSnapshot = buildSnapshot(new Date().toISOString());
   Object.defineProperty(globalThis, 'crypto', {
     configurable: true,
     value: webcrypto as Crypto
@@ -63,11 +95,15 @@ beforeEach(async () => {
   await indexedDB.deleteDatabase(DB_NAME);
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('indexedDbService encryption', () => {
   it('stores encrypted payloads in the snapshot store', async () => {
     await persistSnapshot(baseSnapshot);
 
-    const db = await openDB(DB_NAME, 3);
+    const db = await openDB(DB_NAME, DB_VERSION);
     const record = await db.get('snapshots', 'singleton');
 
     expect(record?.payload).toBeDefined();
@@ -78,7 +114,7 @@ describe('indexedDbService encryption', () => {
   });
 
   it('migrates legacy stores into an encrypted snapshot and clears plain text', async () => {
-    const db = await openDB(DB_NAME, 3);
+    const db = await openDB(DB_NAME, DB_VERSION);
     await db.put('accounts', baseSnapshot.accounts[0]);
     await db.put('categories', baseSnapshot.categories[0]);
     await db.put('transactions', baseSnapshot.transactions[0]);
@@ -89,6 +125,7 @@ describe('indexedDbService encryption', () => {
     expect(snapshot?.accounts).toHaveLength(1);
     expect(snapshot?.accounts[0].name).toBe('Checking');
     expect(snapshot?.monthlyIncomes).toHaveLength(1);
+    expect(snapshot?.profile).toBeNull();
 
     const legacyAccounts = await db.getAll('accounts');
     expect(legacyAccounts).toHaveLength(0);
