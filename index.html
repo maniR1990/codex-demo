@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wealth Accelerator PWA</title>
+    <link rel="manifest" href="./public/app.webmanifest" />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div id="app" class="app-shell" data-view="dashboard">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="icon-circle">₹</span>
+          <span>Wealth Accelerator</span>
+        </div>
+        <div id="sync-status" class="sync-indicator hidden">
+          <span class="dot"></span>
+          <span>Syncing encrypted snapshot…</span>
+        </div>
+        <nav class="nav" id="nav"></nav>
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Data Controls</h2>
+            <p>Import or export encrypted financial snapshots.</p>
+          </div>
+          <div class="button-row">
+            <button class="button" id="export-data">Export</button>
+            <label class="button secondary" for="import-data">Import</label>
+            <input id="import-data" type="file" accept="application/json" hidden />
+          </div>
+          <button class="button secondary" id="reset-data">Reset demo data</button>
+        </div>
+      </aside>
+      <main class="main">
+        <div id="toast-container" class="toast-area"></div>
+        <section id="connection-banner" class="offline-banner hidden">
+          Offline mode — changes are safe and will sync when you reconnect.
+        </section>
+        <section id="view-container"></section>
+      </main>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

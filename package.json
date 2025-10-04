@@ -1,0 +1,12 @@
+{
+  "name": "wealth-accelerator-pwa",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "build": "node scripts/build.mjs",
+    "preview": "PORT=5000 node scripts/dev-server.mjs",
+    "test": "node scripts/self-test.mjs"
+  }
+}
