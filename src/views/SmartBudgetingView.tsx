@@ -915,9 +915,6 @@ export function SmartBudgetingView() {
     const directItems = itemsByCategory.get(category.id) ?? [];
     const categoryStatus: PlannedExpenseSpendingHealth =
       summary.actual === 0 ? 'not-spent' : summary.variance >= 0 ? 'under' : 'over';
-    const statusToken = spendingBadgeStyles[categoryStatus];
-    const varianceLabel = summary.variance >= 0 ? 'Saved' : 'Overspent';
-    const varianceDisplay = Math.abs(summary.variance);
     const matchesCategorySearch =
       normalisedSearchTerm !== '' && category.name.toLowerCase().includes(normalisedSearchTerm);
     const visibleDirectItems = directItems.filter((detail) => {
@@ -933,6 +930,7 @@ export function SmartBudgetingView() {
       .filter((child): child is JSX.Element => child !== null);
     const hasVisibleItems = visibleDirectItems.length > 0;
     const hasVisibleChildren = childSections.length > 0;
+    const canExpand = hasVisibleItems || hasVisibleChildren;
     const matchesStatusForCategory = navigatorFilter === 'all' || categoryStatus === navigatorFilter;
 
     if (!matchesStatusForCategory && !hasVisibleItems && !hasVisibleChildren && !matchesCategorySearch) {
@@ -942,69 +940,53 @@ export function SmartBudgetingView() {
     // Always render expense categories so they can be focused for baseline adjustments,
     // even if they don't yet have planned items in the current period.
 
-    const progressPercentRaw =
-      summary.planned <= 0 ? (summary.actual > 0 ? 100 : 0) : (summary.actual / summary.planned) * 100;
-    const progressPercent = Number.isFinite(progressPercentRaw) ? progressPercentRaw : 0;
-    const progressWidth = Math.max(0, Math.min(100, progressPercent));
-    const progressColor = progressColorByStatus[categoryStatus];
     const isFocused = focusedCategoryId === category.id;
     const shouldAutoExpand =
       normalisedSearchTerm !== '' && (matchesCategorySearch || hasVisibleItems || hasVisibleChildren);
-    const isExpanded = shouldAutoExpand || Boolean(expandedCategories[category.id]);
-    const toneClass =
-      categoryStatus === 'over'
-        ? 'border-danger/50 bg-danger/10'
-        : categoryStatus === 'under'
-        ? 'border-success/30 bg-success/5'
-        : 'border-slate-800 bg-slate-950/70';
-    const focusClass = isFocused ? 'border-accent/70 ring-1 ring-accent/40' : '';
+    const isExpanded = canExpand && (shouldAutoExpand || Boolean(expandedCategories[category.id]));
+    const focusClass = isFocused ? 'bg-slate-900/70 ring-1 ring-inset ring-accent/40' : '';
     const dimClass =
       normalisedSearchTerm !== '' && !matchesCategorySearch && !hasVisibleItems && !hasVisibleChildren
         ? 'opacity-70'
         : '';
     const handleToggle = () => {
       focusCategory(category.id);
-      toggleCategory(category.id);
+      if (canExpand) {
+        toggleCategory(category.id);
+      }
     };
+    const indentation = depth * 20;
 
     return (
-      <div
-        key={category.id}
-        className={`rounded-xl border p-4 transition ${toneClass} ${focusClass} ${dimClass}`}
-        style={{ marginLeft: depth * 12 }}
-      >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="button"
-            onClick={handleToggle}
-            aria-expanded={Boolean(isExpanded)}
-            className="flex w-full flex-1 items-center justify-between gap-3 text-left"
-          >
-            <div className="flex items-center gap-3">
-              <span
-                aria-hidden
-                className={`text-lg text-slate-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-              >
-                ▸
+      <div key={category.id} className={`border-t border-slate-800 ${dimClass}`}>
+        <div
+          className={`grid grid-cols-[minmax(0,3fr)_minmax(140px,1fr)_minmax(120px,0.8fr)] items-center gap-4 px-4 py-3 text-sm transition hover:bg-slate-900/50 ${focusClass}`}
+        >
+          <div className="flex items-center gap-3" style={{ paddingLeft: indentation }}>
+            <button
+              type="button"
+              onClick={handleToggle}
+              aria-expanded={Boolean(isExpanded)}
+              aria-disabled={!canExpand}
+              className={`flex h-6 w-6 items-center justify-center rounded-md border border-slate-700 bg-slate-900/60 text-slate-400 transition ${
+                canExpand ? 'hover:border-accent hover:text-accent' : 'cursor-default opacity-50'
+              }`}
+            >
+              <span aria-hidden className={`text-sm transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
+                {canExpand ? '▸' : '•'}
               </span>
-              <div>
-                <p className="text-sm font-semibold text-slate-100">{category.name}</p>
-                <p className="text-[11px] text-slate-500">
-                  {summary.itemCount} item{summary.itemCount === 1 ? '' : 's'} tracked
-                </p>
-              </div>
+            </button>
+            <div>
+              <p className="text-sm font-semibold text-slate-100">{category.name}</p>
+              <p className="text-[11px] text-slate-500">
+                {summary.itemCount} planned item{summary.itemCount === 1 ? '' : 's'}
+              </p>
             </div>
-            <div className="flex flex-col items-end gap-1 text-[11px] sm:flex-row sm:items-center sm:gap-3">
-              <span className="font-semibold text-warning">{formatCurrency(summary.planned)}</span>
-              <span className={`font-semibold ${summary.variance >= 0 ? 'text-success' : 'text-danger'}`}>
-                {varianceLabel} {formatCurrency(varianceDisplay)}
-              </span>
-              <span className={`rounded-full px-2 py-0.5 font-semibold ${statusToken.badgeClass}`}>
-                {statusToken.label}
-              </span>
-            </div>
-          </button>
-          <div className="flex items-center gap-2 text-[11px]">
+          </div>
+          <div className="text-right text-sm font-semibold text-warning">
+            {formatCurrency(summary.planned)}
+          </div>
+          <div className="flex justify-end text-[11px]">
             {isFocused ? (
               <span className="rounded-full bg-accent/20 px-2 py-0.5 font-semibold text-accent">In focus</span>
             ) : (
@@ -1018,45 +1000,13 @@ export function SmartBudgetingView() {
             )}
           </div>
         </div>
-
-        <div className="mt-3 grid gap-3 text-[11px] sm:grid-cols-3">
-          <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3">
-            <p className="uppercase text-slate-500">Planned</p>
-            <p className="text-sm font-semibold text-warning">{formatCurrency(summary.planned)}</p>
-          </div>
-          <div
-            className={`rounded-lg border border-slate-800 p-3 ${
-              categoryStatus === 'over'
-                ? 'bg-danger/10 text-danger'
-                : categoryStatus === 'under'
-                ? 'bg-success/10 text-success'
-                : 'bg-slate-950/70 text-slate-300'
-            }`}
-          >
-            <p className="uppercase text-slate-500">Actual</p>
-            <p className="text-sm font-semibold">{formatCurrency(summary.actual)}</p>
-          </div>
-          <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3">
-            <p className="uppercase text-slate-500">Variance</p>
-            <p className={`text-sm font-semibold ${summary.variance >= 0 ? 'text-success' : 'text-danger'}`}>
-              {varianceLabel} {formatCurrency(varianceDisplay)}
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-[11px] text-slate-400">
-            <span>Utilisation</span>
-            <span>{Math.round(progressPercent)}%</span>
-          </div>
-          <div className="mt-1 h-2 rounded-full bg-slate-800">
-            <div className="h-2 rounded-full" style={{ width: `${progressWidth}%`, backgroundColor: progressColor }} />
-          </div>
-        </div>
-
         {isExpanded && (
-          <div className="mt-4 space-y-3 border-t border-slate-800 pt-4">
-            {visibleDirectItems.map((detail) => renderItemCard(detail, depth + 1))}
+          <div className="bg-slate-950/40">
+            {visibleDirectItems.length > 0 && (
+              <div className="space-y-3 border-t border-slate-800/60 px-4 py-3">
+                {visibleDirectItems.map((detail) => renderItemCard(detail, depth + 1))}
+              </div>
+            )}
             {childSections}
           </div>
         )}
@@ -1346,19 +1296,9 @@ export function SmartBudgetingView() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2">
-              <p className="font-semibold text-warning">Planned {formatCurrency(overallSummary.planned)}</p>
-              <p className={`font-semibold ${spendingBadgeStyles[overallSummary.status].toneClass}`}>
-                Actual {formatCurrency(overallSummary.actual)}
-              </p>
-              <p
-                className={`font-semibold ${
-                  overallSummary.variance >= 0 ? 'text-success' : 'text-danger'
-                }`}
-              >
-                {overallSummary.variance >= 0 ? 'Saved' : 'Overspent'}{' '}
-                {formatCurrency(Math.abs(overallSummary.variance))}
-              </p>
+            <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-3 text-left">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">Total planned</p>
+              <p className="text-lg font-semibold text-warning">{formatCurrency(overallSummary.planned)}</p>
             </div>
             <span
               className={`rounded-full px-2 py-0.5 font-semibold uppercase tracking-wide ${
@@ -1451,7 +1391,16 @@ export function SmartBudgetingView() {
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(260px,1fr)]">
           <div className="space-y-4">
-            {renderedCategorySections}
+            {renderedCategorySections.length > 0 && (
+              <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/70">
+                <div className="grid grid-cols-[minmax(0,3fr)_minmax(140px,1fr)_minmax(120px,0.8fr)] items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  <span>Category</span>
+                  <span className="text-right">Planned</span>
+                  <span className="text-right">Actions</span>
+                </div>
+                <div>{renderedCategorySections}</div>
+              </div>
+            )}
             {visibleUncategorisedDetails.length > 0 && (
               <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
