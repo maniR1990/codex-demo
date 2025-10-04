@@ -1162,93 +1162,101 @@ export function IncomeManagementView() {
                     key={draft.id}
                     className="space-y-4 rounded-lg border border-slate-800 bg-slate-950/60 p-4"
                   >
-                    <legend className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
-                      <span>Category {index + 1}</span>
-                      {categoryDrafts.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeDraftRow(draft.id)}
-                          className="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-semibold"
+                    <legend className="sr-only">Category {index + 1}</legend>
+
+                    <div className="overflow-x-auto">
+                      <div role="table" className="min-w-full">
+                        <div
+                          role="row"
+                          className="flex flex-wrap items-start gap-x-6 gap-y-4 rounded-md border border-slate-800/60 bg-slate-950/40 px-4 py-3 text-xs"
                         >
-                          Remove
-                        </button>
-                      )}
-                    </legend>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
-                        Name
-                        <input
-                          required
-                          className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                          value={draft.name}
-                          onChange={(event) => updateDraft(draft.id, 'name', event.target.value)}
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
-                        Type
-                        <select
-                          className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                          value={draft.type}
-                          onChange={(event) => {
-                            updateDraft(draft.id, 'type', event.target.value as Category['type']);
-                            updateDraft(draft.id, 'parentId', '');
-                          }}
-                        >
-                          {categoryTypes.map((type) => (
-                            <option key={type} value={type}>
-                              {type.charAt(0).toUpperCase() + type.slice(1)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
-                        Parent (same root type)
-                        <select
-                          className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                          value={draft.parentId}
-                          onChange={(event) => updateDraft(draft.id, 'parentId', event.target.value)}
-                        >
-                          <option value="">No parent</option>
-                          {parentOptions.map((category) => (
-                            <option key={category.id} value={category.id}>
-                              {category.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
-                        Tags
-                        <input
-                          className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                          value={draft.tags}
-                          onChange={(event) => updateDraft(draft.id, 'tags', event.target.value)}
-                          placeholder="e.g. bill, essentials"
-                        />
-                      </label>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
-                        Monthly budget (₹)
-                        <input
-                          type="number"
-                          min={0}
-                          className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                          value={draft.monthlyBudget}
-                          onChange={(event) => updateDraft(draft.id, 'monthlyBudget', event.target.value)}
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
-                        Yearly budget (₹)
-                        <input
-                          type="number"
-                          min={0}
-                          className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                          value={draft.yearlyBudget}
-                          onChange={(event) => updateDraft(draft.id, 'yearlyBudget', event.target.value)}
-                        />
-                      </label>
+                          <div
+                            role="rowheader"
+                            className="flex items-center gap-2 whitespace-nowrap text-[11px] uppercase tracking-wide text-slate-400"
+                          >
+                            <span>Category {index + 1}</span>
+                            {categoryDrafts.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeDraftRow(draft.id)}
+                                className="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:border-slate-500"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                          <label role="cell" className="flex min-w-[12rem] flex-1 basis-48 flex-col gap-1 text-[11px] uppercase text-slate-500">
+                            <span>Name</span>
+                            <input
+                              required
+                              className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+                              value={draft.name}
+                              onChange={(event) => updateDraft(draft.id, 'name', event.target.value)}
+                            />
+                          </label>
+                          <label role="cell" className="flex min-w-[11rem] flex-1 basis-40 flex-col gap-1 text-[11px] uppercase text-slate-500">
+                            <span>Type</span>
+                            <select
+                              className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+                              value={draft.type}
+                              onChange={(event) => {
+                                updateDraft(draft.id, 'type', event.target.value as Category['type']);
+                                updateDraft(draft.id, 'parentId', '');
+                              }}
+                            >
+                              {categoryTypes.map((type) => (
+                                <option key={type} value={type}>
+                                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label role="cell" className="flex min-w-[14rem] flex-1 basis-52 flex-col gap-1 text-[11px] uppercase text-slate-500">
+                            <span>Parent (same root type)</span>
+                            <select
+                              className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+                              value={draft.parentId}
+                              onChange={(event) => updateDraft(draft.id, 'parentId', event.target.value)}
+                            >
+                              <option value="">No parent</option>
+                              {parentOptions.map((category) => (
+                                <option key={category.id} value={category.id}>
+                                  {category.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label role="cell" className="flex min-w-[13rem] flex-1 basis-48 flex-col gap-1 text-[11px] uppercase text-slate-500">
+                            <span>Tags</span>
+                            <input
+                              className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+                              value={draft.tags}
+                              onChange={(event) => updateDraft(draft.id, 'tags', event.target.value)}
+                              placeholder="e.g. bill, essentials"
+                            />
+                          </label>
+                          <label role="cell" className="flex min-w-[12rem] flex-1 basis-44 flex-col gap-1 text-[11px] uppercase text-slate-500">
+                            <span>Monthly budget (₹)</span>
+                            <input
+                              type="number"
+                              min={0}
+                              className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+                              value={draft.monthlyBudget}
+                              onChange={(event) => updateDraft(draft.id, 'monthlyBudget', event.target.value)}
+                            />
+                          </label>
+                          <label role="cell" className="flex min-w-[12rem] flex-1 basis-44 flex-col gap-1 text-[11px] uppercase text-slate-500">
+                            <span>Yearly budget (₹)</span>
+                            <input
+                              type="number"
+                              min={0}
+                              className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+                              value={draft.yearlyBudget}
+                              onChange={(event) => updateDraft(draft.id, 'yearlyBudget', event.target.value)}
+                            />
+                          </label>
+                        </div>
+                      </div>
                     </div>
                   </fieldset>
                 );
