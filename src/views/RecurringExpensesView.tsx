@@ -1,0 +1,230 @@
+import { FormEvent, useMemo, useState } from 'react';
+import { addMonths, formatISO } from 'date-fns';
+import { useFinancialStore } from '../store/FinancialStoreProvider';
+import type { Frequency } from '../types';
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
+}
+
+const frequencies: Frequency[] = ['Monthly', 'Quarterly', 'Annually'];
+
+export function RecurringExpensesView() {
+  const {
+    recurringExpenses,
+    categories,
+    transactions,
+    addRecurringExpense,
+    updateRecurringExpense,
+    deleteRecurringExpense
+  } = useFinancialStore();
+  const [formState, setFormState] = useState({
+    name: '',
+    amount: 0,
+    categoryId: categories.find((cat) => cat.type === 'expense')?.id ?? '',
+    frequency: 'Monthly' as Frequency,
+    dueDate: formatISO(new Date(), { representation: 'date' }),
+    isEstimated: false
+  });
+
+  const monthlyForecast = useMemo(() => {
+    const forecast = new Map<string, number>();
+    recurringExpenses.forEach((expense) => {
+      const monthsAhead = 3;
+      for (let i = 0; i < monthsAhead; i += 1) {
+        const monthKey = formatISO(addMonths(new Date(expense.dueDate), i), { representation: 'date' }).slice(0, 7);
+        const current = forecast.get(monthKey) ?? 0;
+        const amount = expense.frequency === 'Monthly' ? expense.amount : expense.amount / (expense.frequency === 'Quarterly' ? 3 : 12);
+        forecast.set(monthKey, current + amount);
+      }
+    });
+    return Array.from(forecast.entries())
+      .map(([month, amount]) => ({ month, amount }))
+      .sort((a, b) => (a.month > b.month ? 1 : -1));
+  }, [recurringExpenses]);
+
+  const reconciliation = useMemo(() => {
+    return recurringExpenses.map((expense) => {
+      const match = transactions.find((txn) =>
+        txn.description.toLowerCase().includes(expense.name.toLowerCase()) &&
+        Math.abs(txn.amount + expense.amount) < 1_000
+      );
+      return { expense, match };
+    });
+  }, [recurringExpenses, transactions]);
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    await addRecurringExpense({
+      name: formState.name,
+      amount: Number(formState.amount),
+      categoryId: formState.categoryId,
+      frequency: formState.frequency,
+      dueDate: formState.dueDate,
+      currency: 'INR',
+      isEstimated: formState.isEstimated,
+      nextDueDate: addMonths(new Date(formState.dueDate), 1).toISOString()
+    });
+    setFormState((prev) => ({ ...prev, name: '', amount: 0 }));
+  };
+
+  return (
+    <div className="space-y-6">
+      <header>
+        <h2 className="text-2xl font-semibold">Recurring Expenses & Subscription Hub</h2>
+        <p className="text-sm text-slate-400">
+          Track fixed obligations, auto-forecast budgets, and reconcile imported transactions with scheduled payments.
+        </p>
+      </header>
+
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
+        <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="text-xs uppercase text-slate-500">Expense name</label>
+            <input
+              required
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              value={formState.name}
+              onChange={(event) => setFormState((prev) => ({ ...prev, name: event.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs uppercase text-slate-500">Amount (₹)</label>
+            <input
+              type="number"
+              min={0}
+              required
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              value={formState.amount}
+              onChange={(event) => setFormState((prev) => ({ ...prev, amount: Number(event.target.value) }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs uppercase text-slate-500">Category</label>
+            <select
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              value={formState.categoryId}
+              onChange={(event) => setFormState((prev) => ({ ...prev, categoryId: event.target.value }))}
+            >
+              {categories
+                .filter((cat) => cat.type === 'expense')
+                .map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs uppercase text-slate-500">Frequency</label>
+            <select
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              value={formState.frequency}
+              onChange={(event) => setFormState((prev) => ({ ...prev, frequency: event.target.value as Frequency }))}
+            >
+              {frequencies.map((freq) => (
+                <option key={freq} value={freq}>
+                  {freq}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs uppercase text-slate-500">Due Date</label>
+            <input
+              type="date"
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              value={formState.dueDate}
+              onChange={(event) => setFormState((prev) => ({ ...prev, dueDate: event.target.value }))}
+            />
+          </div>
+          <div className="flex items-center gap-2 pt-6 md:col-span-2">
+            <input
+              id="estimated"
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-700 bg-slate-900"
+              checked={formState.isEstimated}
+              onChange={(event) => setFormState((prev) => ({ ...prev, isEstimated: event.target.checked }))}
+            />
+            <label htmlFor="estimated" className="text-xs text-slate-400">
+              Amount is estimated
+            </label>
+          </div>
+          <button
+            type="submit"
+            className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-sky-300 md:col-span-2 md:w-auto"
+          >
+            Add recurring expense
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
+        <h3 className="text-lg font-semibold">Automated budget forecasting</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          {monthlyForecast.map((item) => (
+            <div key={item.month} className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm">
+              <p className="text-xs uppercase text-slate-500">{item.month}</p>
+              <p className="mt-2 text-base font-semibold text-warning">{formatCurrency(item.amount)}</p>
+              <p className="text-xs text-slate-500">Auto-populated into monthly budget plans.</p>
+            </div>
+          ))}
+          {monthlyForecast.length === 0 && (
+            <p className="text-sm text-slate-500 md:col-span-3">No recurring expenses yet.</p>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
+        <h3 className="text-lg font-semibold">Smart reconciliation & alerts</h3>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          {reconciliation.map(({ expense, match }) => (
+            <article key={expense.id} className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <h4 className="text-base font-semibold text-slate-100">{expense.name}</h4>
+                  <p className="text-xs text-slate-500">Due {new Date(expense.dueDate).toLocaleDateString('en-IN')}</p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Category: {categories.find((cat) => cat.id === expense.categoryId)?.name ?? 'Uncategorised'}
+                  </p>
+                </div>
+                <div className="text-left sm:text-right">
+                  <p className="text-sm font-semibold text-warning">{formatCurrency(expense.amount)}</p>
+                  <p className="text-xs text-slate-500">{expense.frequency}</p>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg bg-success/20 px-3 py-1 text-xs font-semibold text-success"
+                  onClick={() =>
+                    updateRecurringExpense(expense.id, {
+                      nextDueDate: addMonths(new Date(expense.dueDate), 1).toISOString()
+                    })
+                  }
+                >
+                  Mark paid
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg bg-danger/20 px-3 py-1 text-xs font-semibold text-danger"
+                  onClick={() => deleteRecurringExpense(expense.id)}
+                >
+                  Delete
+                </button>
+              </div>
+              <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/80 p-3 text-xs text-slate-300">
+                {match
+                  ? `Matched with transaction "${match.description}" on ${new Date(match.date).toLocaleDateString('en-IN')}`
+                  : 'No matching transaction yet. We will alert you before the due date.'}
+              </div>
+            </article>
+          ))}
+          {recurringExpenses.length === 0 && (
+            <p className="text-sm text-slate-500 md:col-span-2">No recurring commitments captured yet.</p>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
