@@ -822,69 +822,6 @@ export function IncomeManagementView() {
           <span className="text-slate-500">Currently viewing: {incomePeriodLabel}</span>
         </div>
 
-        <form onSubmit={handleIncomeSubmit} className="mt-6 grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="text-xs uppercase text-slate-500">Source</label>
-            <input
-              required
-              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-              value={incomeForm.source}
-              onChange={(event) => setIncomeForm((prev) => ({ ...prev, source: event.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs uppercase text-slate-500">Amount (₹)</label>
-            <input
-              type="number"
-              min={0}
-              required
-              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-              value={incomeForm.amount}
-              onChange={(event) => setIncomeForm((prev) => ({ ...prev, amount: Number(event.target.value) }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs uppercase text-slate-500">Received on</label>
-            <input
-              type="date"
-              required
-              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-              value={incomeForm.receivedOn}
-              onChange={(event) => setIncomeForm((prev) => ({ ...prev, receivedOn: event.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs uppercase text-slate-500">Category</label>
-            <select
-              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-              value={incomeForm.categoryId}
-              onChange={(event) => setIncomeForm((prev) => ({ ...prev, categoryId: event.target.value }))}
-            >
-              <option value="">Select category</option>
-              {incomeCategories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="md:col-span-2">
-            <label className="text-xs uppercase text-slate-500">Notes</label>
-            <textarea
-              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-              rows={2}
-              value={incomeForm.notes}
-              onChange={(event) => setIncomeForm((prev) => ({ ...prev, notes: event.target.value }))}
-            />
-          </div>
-          <button
-            type="submit"
-            className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-sky-300 md:col-span-2 md:w-auto"
-          >
-            Add income stream
-          </button>
-        </form>
-
         <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm">
           <p className="text-xs uppercase text-slate-500">Total for {incomePeriodLabel}</p>
           <p className="mt-1 text-lg font-semibold text-success">{formatCurrency(incomeSummary)}</p>
@@ -1026,13 +963,76 @@ export function IncomeManagementView() {
               {filteredIncomes.length === 0 && (
                 <tr>
                   <td className="px-4 py-3 text-center text-sm text-slate-500" colSpan={6}>
-                    No income entries for this period. Add your first source above.
+                    No income entries for this period. Add your first source below.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+
+        <form onSubmit={handleIncomeSubmit} className="mt-6 grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="text-xs uppercase text-slate-500">Source</label>
+            <input
+              required
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              value={incomeForm.source}
+              onChange={(event) => setIncomeForm((prev) => ({ ...prev, source: event.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs uppercase text-slate-500">Amount (₹)</label>
+            <input
+              type="number"
+              min={0}
+              required
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              value={incomeForm.amount}
+              onChange={(event) => setIncomeForm((prev) => ({ ...prev, amount: Number(event.target.value) }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs uppercase text-slate-500">Received on</label>
+            <input
+              type="date"
+              required
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              value={incomeForm.receivedOn}
+              onChange={(event) => setIncomeForm((prev) => ({ ...prev, receivedOn: event.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs uppercase text-slate-500">Category</label>
+            <select
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              value={incomeForm.categoryId}
+              onChange={(event) => setIncomeForm((prev) => ({ ...prev, categoryId: event.target.value }))}
+            >
+              <option value="">Select category</option>
+              {incomeCategories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-xs uppercase text-slate-500">Notes</label>
+            <textarea
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              rows={2}
+              value={incomeForm.notes}
+              onChange={(event) => setIncomeForm((prev) => ({ ...prev, notes: event.target.value }))}
+            />
+          </div>
+          <button
+            type="submit"
+            className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-sky-300 md:col-span-2 md:w-auto"
+          >
+            Add income stream
+          </button>
+        </form>
         </section>
       )}
 
