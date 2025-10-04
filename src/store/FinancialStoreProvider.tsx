@@ -5,6 +5,7 @@ import type {
   FinancialSnapshot,
   Goal,
   Insight,
+  MonthlyIncome,
   PlannedExpenseItem,
   RecurringExpense,
   Transaction
@@ -22,6 +23,7 @@ const defaultState: FinancialStoreState = {
   accounts: [],
   categories: [],
   transactions: [],
+  monthlyIncomes: [],
   plannedExpenses: [],
   recurringExpenses: [],
   goals: [],
@@ -41,6 +43,9 @@ interface FinancialStoreActions {
   addCategory(payload: Omit<Category, 'id'>): Promise<Category>;
   updateCategory(id: string, payload: Partial<Category>): Promise<void>;
   deleteCategory(id: string): Promise<void>;
+  addMonthlyIncome(payload: Omit<MonthlyIncome, 'id'>): Promise<MonthlyIncome>;
+  updateMonthlyIncome(id: string, payload: Partial<MonthlyIncome>): Promise<void>;
+  deleteMonthlyIncome(id: string): Promise<void>;
   addPlannedExpense(payload: Omit<PlannedExpenseItem, 'id' | 'status'> & { status?: PlannedExpenseItem['status'] }): Promise<PlannedExpenseItem>;
   updatePlannedExpense(id: string, payload: Partial<PlannedExpenseItem>): Promise<void>;
   deletePlannedExpense(id: string): Promise<void>;
@@ -65,7 +70,12 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
     (async () => {
       const snapshot = await loadSnapshot();
       if (snapshot) {
-        setState((prev) => ({ ...prev, ...snapshot, isReady: true }));
+        setState((prev) => ({
+          ...prev,
+          ...snapshot,
+          monthlyIncomes: snapshot.monthlyIncomes ?? [],
+          isReady: true
+        }));
       } else {
         await refresh();
       }
@@ -77,6 +87,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
     accounts: state.accounts,
     categories: state.categories,
     transactions: state.transactions,
+    monthlyIncomes: state.monthlyIncomes,
     plannedExpenses: state.plannedExpenses,
     recurringExpenses: state.recurringExpenses,
     goals: state.goals,
@@ -100,7 +111,8 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       manualTransactions: state.transactions.filter(
         (txn) => txn.accountId !== 'acct-hdfc-savings' && txn.accountId !== 'acct-zerodha-invest'
       ),
-      manualCategories: state.categories.filter((cat) => cat.isCustom)
+      manualCategories: state.categories.filter((cat) => cat.isCustom),
+      manualMonthlyIncomes: state.monthlyIncomes.filter((income) => income.id.startsWith('custom-'))
     });
     setState((prev) => ({ ...prev, ...snapshot, isReady: true, isSyncing: false, lastSyncedAt: new Date().toISOString() }));
   };
@@ -128,14 +140,16 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
   const deleteCategory: FinancialStoreActions['deleteCategory'] = async (id) => {
     await persistAndSet((prev) => {
       const remainingCategories = prev.categories.filter((category) => category.id !== id);
+      const deletedCategory = prev.categories.find((category) => category.id === id);
       let fallbackCategory =
-        remainingCategories.find((category) => category.type === 'expense') ?? remainingCategories[0];
+        remainingCategories.find((category) => category.type === (deletedCategory?.type ?? 'expense')) ??
+        remainingCategories[0];
       const categories = [...remainingCategories];
       if (!fallbackCategory) {
         fallbackCategory = {
           id: crypto.randomUUID(),
           name: 'Uncategorised',
-          type: 'expense',
+          type: deletedCategory?.type ?? 'expense',
           isCustom: true
         } satisfies Category;
         categories.push(fallbackCategory);
@@ -161,9 +175,43 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
                 categoryId: fallbackCategory.id
               }
             : item
+        ),
+        monthlyIncomes: prev.monthlyIncomes.map((income) =>
+          income.categoryId === id
+            ? {
+                ...income,
+                categoryId: fallbackCategory.id
+              }
+            : income
         )
       };
     });
+  };
+
+  const addMonthlyIncome: FinancialStoreActions['addMonthlyIncome'] = async (payload) => {
+    const newIncome: MonthlyIncome = {
+      ...payload,
+      id: `custom-${crypto.randomUUID()}`
+    };
+    await persistAndSet((prev) => ({
+      ...prev,
+      monthlyIncomes: [...prev.monthlyIncomes, newIncome]
+    }));
+    return newIncome;
+  };
+
+  const updateMonthlyIncome: FinancialStoreActions['updateMonthlyIncome'] = async (id, payload) => {
+    await persistAndSet((prev) => ({
+      ...prev,
+      monthlyIncomes: prev.monthlyIncomes.map((income) => (income.id === id ? { ...income, ...payload } : income))
+    }));
+  };
+
+  const deleteMonthlyIncome: FinancialStoreActions['deleteMonthlyIncome'] = async (id) => {
+    await persistAndSet((prev) => ({
+      ...prev,
+      monthlyIncomes: prev.monthlyIncomes.filter((income) => income.id !== id)
+    }));
   };
 
   const addPlannedExpense: FinancialStoreActions['addPlannedExpense'] = async (payload) => {
@@ -260,6 +308,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({
       ...prev,
       ...snapshot,
+      monthlyIncomes: snapshot.monthlyIncomes ?? [],
       isReady: true,
       lastSyncedAt: new Date().toISOString()
     }));
@@ -272,6 +321,9 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       addCategory,
       updateCategory,
       deleteCategory,
+      addMonthlyIncome,
+      updateMonthlyIncome,
+      deleteMonthlyIncome,
       addPlannedExpense,
       updatePlannedExpense,
       deletePlannedExpense,

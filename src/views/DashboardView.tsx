@@ -8,7 +8,7 @@ function formatCurrency(value: number) {
 }
 
 export function DashboardView() {
-  const { accounts, transactions, categories, wealthMetrics } = useFinancialStore();
+  const { accounts, transactions, categories, wealthMetrics, monthlyIncomes } = useFinancialStore();
 
   const netWorth = useMemo(() => {
     const assets = accounts
@@ -21,10 +21,13 @@ export function DashboardView() {
   }, [accounts]);
 
   const { monthlyIncome, monthlyExpenses } = useMemo(() => {
-    const income = transactions.filter((txn) => txn.amount > 0).reduce((sum, txn) => sum + txn.amount, 0);
+    const incomeFromTransactions = transactions
+      .filter((txn) => txn.amount > 0)
+      .reduce((sum, txn) => sum + txn.amount, 0);
+    const recurringIncome = monthlyIncomes.reduce((sum, income) => sum + income.amount, 0);
     const expenses = transactions.filter((txn) => txn.amount < 0).reduce((sum, txn) => sum + Math.abs(txn.amount), 0);
-    return { monthlyIncome: income, monthlyExpenses: expenses };
-  }, [transactions]);
+    return { monthlyIncome: incomeFromTransactions + recurringIncome, monthlyExpenses: expenses };
+  }, [transactions, monthlyIncomes]);
 
   const savingsRate = monthlyIncome > 0 ? ((monthlyIncome - monthlyExpenses) / monthlyIncome) * 100 : 0;
 

@@ -5,6 +5,7 @@ import type {
   FinancialSnapshot,
   Goal,
   Insight,
+  MonthlyIncome,
   PlannedExpenseItem,
   RecurringExpense,
   Transaction,
@@ -13,13 +14,14 @@ import type {
 } from '../types';
 
 const DB_NAME = 'wealth-accelerator-db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const SNAPSHOT_STORE = 'snapshots';
 
 export type StoreName =
   | 'accounts'
   | 'categories'
   | 'transactions'
+  | 'monthlyIncomes'
   | 'plannedExpenses'
   | 'recurringExpenses'
   | 'goals'
@@ -36,6 +38,7 @@ const LEGACY_STORES: StoreName[] = [
   'accounts',
   'categories',
   'transactions',
+  'monthlyIncomes',
   'plannedExpenses',
   'recurringExpenses',
   'goals',
@@ -58,6 +61,9 @@ async function getDb() {
         }
         if (!database.objectStoreNames.contains('transactions')) {
           database.createObjectStore('transactions', { keyPath: 'id' });
+        }
+        if (!database.objectStoreNames.contains('monthlyIncomes')) {
+          database.createObjectStore('monthlyIncomes', { keyPath: 'id' });
         }
         if (!database.objectStoreNames.contains('plannedExpenses')) {
           database.createObjectStore('plannedExpenses', { keyPath: 'id' });
@@ -130,23 +136,35 @@ export async function loadSnapshot(): Promise<FinancialSnapshot | null> {
 }
 
 async function loadLegacySnapshot(): Promise<FinancialSnapshot | null> {
-  const [accounts, categories, transactions, plannedExpenses, recurringExpenses, goals, insights, wealthMetrics, connections] =
-    await Promise.all([
-      getAll<Account>('accounts'),
-      getAll<Category>('categories'),
-      getAll<Transaction>('transactions'),
-      getAll<PlannedExpenseItem>('plannedExpenses'),
-      getAll<RecurringExpense>('recurringExpenses'),
-      getAll<Goal>('goals'),
-      getAll<Insight>('insights'),
-      getAll<WealthAcceleratorMetrics & { id: string }>('wealthMetrics'),
-      getAll<FinancialInstitutionConnection>('connections')
-    ]);
+  const [
+    accounts,
+    categories,
+    transactions,
+    monthlyIncomes,
+    plannedExpenses,
+    recurringExpenses,
+    goals,
+    insights,
+    wealthMetrics,
+    connections
+  ] = await Promise.all([
+    getAll<Account>('accounts'),
+    getAll<Category>('categories'),
+    getAll<Transaction>('transactions'),
+    getAll<MonthlyIncome>('monthlyIncomes'),
+    getAll<PlannedExpenseItem>('plannedExpenses'),
+    getAll<RecurringExpense>('recurringExpenses'),
+    getAll<Goal>('goals'),
+    getAll<Insight>('insights'),
+    getAll<WealthAcceleratorMetrics & { id: string }>('wealthMetrics'),
+    getAll<FinancialInstitutionConnection>('connections')
+  ]);
 
   if (
     accounts.length === 0 &&
     categories.length === 0 &&
     transactions.length === 0 &&
+    monthlyIncomes.length === 0 &&
     plannedExpenses.length === 0 &&
     recurringExpenses.length === 0 &&
     goals.length === 0 &&
@@ -168,6 +186,7 @@ async function loadLegacySnapshot(): Promise<FinancialSnapshot | null> {
     accounts,
     categories,
     transactions,
+    monthlyIncomes,
     plannedExpenses,
     recurringExpenses,
     goals,
@@ -187,6 +206,7 @@ export async function exportSnapshot(): Promise<Blob> {
     accounts: [],
     categories: [],
     transactions: [],
+    monthlyIncomes: [],
     plannedExpenses: [],
     recurringExpenses: [],
     goals: [],

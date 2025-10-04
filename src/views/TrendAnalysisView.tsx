@@ -14,14 +14,22 @@ interface MonthlySummary {
 }
 
 export function TrendAnalysisView() {
-  const { transactions, categories } = useFinancialStore();
+  const { transactions, categories, monthlyIncomes } = useFinancialStore();
 
   const monthlySummaries = useMemo(() => {
     const map = new Map<string, MonthlySummary>();
+    const ensureSummary = (date: Date) => {
+      const key = format(date, 'yyyy-MM');
+      const summary = map.get(key);
+      if (summary) return summary;
+      const nextSummary = { month: format(date, 'MMM yyyy'), income: 0, expenses: 0, net: 0 };
+      map.set(key, nextSummary);
+      return nextSummary;
+    };
+
     transactions.forEach((txn) => {
       const date = parseISO(txn.date);
-      const key = format(date, 'yyyy-MM');
-      const summary = map.get(key) ?? { month: format(date, 'MMM yyyy'), income: 0, expenses: 0, net: 0 };
+      const summary = ensureSummary(date);
       if (txn.amount > 0) {
         summary.income += txn.amount;
         summary.net += txn.amount;
@@ -29,12 +37,19 @@ export function TrendAnalysisView() {
         summary.expenses += Math.abs(txn.amount);
         summary.net += txn.amount;
       }
-      map.set(key, summary);
     });
+
+    monthlyIncomes.forEach((income) => {
+      const date = parseISO(income.receivedOn);
+      const summary = ensureSummary(date);
+      summary.income += income.amount;
+      summary.net += income.amount;
+    });
+
     return Array.from(map.entries())
       .sort(([a], [b]) => (a > b ? 1 : -1))
       .map(([, value]) => value);
-  }, [transactions]);
+  }, [transactions, monthlyIncomes]);
 
   const customCategoryTotals = useMemo(() => {
     const totals = new Map<string, number>();
