@@ -123,6 +123,11 @@ function MetricCard({ title, value, subtitle }: { title: string; value: string; 
 }
 
 function SavingsGauge({ savingsRate, income, expenses }: { savingsRate: number; income: number; expenses: number }) {
+  const clampedRate = Math.max(0, Math.min(150, savingsRate));
+  const radius = 15.9155;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference - (Math.min(100, Math.max(0, clampedRate)) / 100) * circumference;
+
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
       <h2 className="text-lg font-semibold">Savings & Investment Rate</h2>
@@ -130,19 +135,25 @@ function SavingsGauge({ savingsRate, income, expenses }: { savingsRate: number; 
       <div className="mt-6 flex flex-col items-center gap-6 text-center sm:flex-row sm:text-left">
         <div className="relative h-32 w-32">
           <svg viewBox="0 0 36 36" className="h-full w-full">
-            <path
-              d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831"
+            <circle
+              cx="18"
+              cy="18"
+              r={radius}
               fill="none"
               stroke="#1e293b"
               strokeWidth="3"
             />
-            <path
-              d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831"
+            <circle
+              cx="18"
+              cy="18"
+              r={radius}
               fill="none"
               stroke="#38bdf8"
-              strokeDasharray={`${Math.max(0, Math.min(100, savingsRate)).toFixed(0)}, 100`}
-              strokeLinecap="round"
               strokeWidth="3"
+              strokeDasharray={`${circumference} ${circumference}`}
+              strokeDashoffset={dashOffset}
+              strokeLinecap="round"
+              transform="rotate(-90 18 18)"
             />
             <text x="18" y="20.35" className="fill-slate-100 text-lg" textAnchor="middle">
               {savingsRate.toFixed(1)}%

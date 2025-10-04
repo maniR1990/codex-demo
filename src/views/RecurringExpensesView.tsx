@@ -1,5 +1,5 @@
 import { FormEvent, useMemo, useState } from 'react';
-import { addMonths, formatISO } from 'date-fns';
+import { addDays, addMonths, format, formatISO } from 'date-fns';
 import { useFinancialStore } from '../store/FinancialStoreProvider';
 import type { Frequency } from '../types';
 
@@ -14,6 +14,7 @@ export function RecurringExpensesView() {
     recurringExpenses,
     categories,
     transactions,
+    plannedExpenses,
     addRecurringExpense,
     updateRecurringExpense,
     deleteRecurringExpense
@@ -42,6 +43,64 @@ export function RecurringExpensesView() {
       .map(([month, amount]) => ({ month, amount }))
       .sort((a, b) => (a.month > b.month ? 1 : -1));
   }, [recurringExpenses]);
+
+  const billTaggedCategories = useMemo(
+    () =>
+      categories.filter(
+        (category) =>
+          category.type === 'expense' && category.tags.some((tag) => tag.toLowerCase() === 'bill')
+      ),
+    [categories]
+  );
+
+  const billCategoryIds = useMemo(() => new Set(billTaggedCategories.map((category) => category.id)), [billTaggedCategories]);
+
+  const billReminders = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const horizon = addDays(startOfToday, 14).getTime();
+    const reminders: Array<{
+      id: string;
+      name: string;
+      amount: number;
+      dueDate: string;
+      source: 'planned' | 'recurring';
+      frequency?: Frequency;
+    }> = [];
+
+    plannedExpenses.forEach((item) => {
+      if (!billCategoryIds.has(item.categoryId)) return;
+      const due = new Date(item.dueDate).getTime();
+      if (due >= startOfToday.getTime() && due <= horizon) {
+        reminders.push({
+          id: item.id,
+          name: item.name,
+          amount: item.plannedAmount,
+          dueDate: item.dueDate,
+          source: 'planned'
+        });
+      }
+    });
+
+    recurringExpenses.forEach((expense) => {
+      if (!billCategoryIds.has(expense.categoryId)) return;
+      const dueDate = expense.nextDueDate ?? expense.dueDate;
+      const due = new Date(dueDate).getTime();
+      if (due >= startOfToday.getTime() && due <= horizon) {
+        reminders.push({
+          id: expense.id,
+          name: expense.name,
+          amount: expense.amount,
+          dueDate,
+          source: 'recurring',
+          frequency: expense.frequency
+        });
+      }
+    });
+
+    reminders.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+    return reminders;
+  }, [plannedExpenses, recurringExpenses, billCategoryIds]);
 
   const reconciliation = useMemo(() => {
     return recurringExpenses.map((expense) => {
@@ -76,6 +135,34 @@ export function RecurringExpensesView() {
           Track fixed obligations, auto-forecast budgets, and reconcile imported transactions with scheduled payments.
         </p>
       </header>
+
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
+        <h3 className="text-lg font-semibold">Upcoming bill reminders</h3>
+        <p className="text-xs text-slate-500">
+          Only expense categories tagged with <code>#bill</code> appear here. We watch planned purchases and recurring
+          debits for the next 14 days.
+        </p>
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {billReminders.map((reminder) => (
+            <article key={reminder.id} className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h4 className="text-base font-semibold text-slate-100">{reminder.name}</h4>
+                  <p className="text-xs text-slate-500">
+                    Due {format(new Date(reminder.dueDate), 'd MMM yyyy')} • {reminder.source === 'planned' ? 'Planned expense' : `${reminder.frequency ?? 'Recurring'}`}
+                  </p>
+                </div>
+                <span className="text-warning font-semibold">{formatCurrency(reminder.amount)}</span>
+              </div>
+            </article>
+          ))}
+          {billReminders.length === 0 && (
+            <p className="text-sm text-slate-500 md:col-span-2 xl:col-span-3">
+              No bill-tagged reminders due in the next two weeks.
+            </p>
+          )}
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
         <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">

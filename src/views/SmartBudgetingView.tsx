@@ -1,10 +1,26 @@
-import { FormEvent, useMemo, useState } from 'react';
-import { addMonths, formatISO } from 'date-fns';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { addMonths, format, formatISO, parseISO } from 'date-fns';
 import { useFinancialStore } from '../store/FinancialStoreProvider';
 import type { PlannedExpenseItem } from '../types';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
+}
+
+function monthKey(date: string) {
+  return date.slice(0, 7);
+}
+
+function yearKey(date: string) {
+  return date.slice(0, 4);
+}
+
+function formatMonthLabel(month: string) {
+  try {
+    return format(parseISO(`${month}-01`), 'MMMM yyyy');
+  } catch {
+    return month;
+  }
 }
 
 export function SmartBudgetingView() {
@@ -17,34 +33,156 @@ export function SmartBudgetingView() {
     deletePlannedExpense,
     addCategory
   } = useFinancialStore();
-  const [formState, setFormState] = useState({ name: '', amount: 0, dueDate: formatISO(addMonths(new Date(), 1), { representation: 'date' }), categoryId: categories[0]?.id ?? '' });
+  const now = new Date();
+  const defaultMonth = format(now, 'yyyy-MM');
+  const defaultYear = format(now, 'yyyy');
+
+  const expenseCategories = useMemo(
+    () => categories.filter((category) => category.type === 'expense'),
+    [categories]
+  );
+
+  const [viewMode, setViewMode] = useState<'monthly' | 'yearly'>('monthly');
+  const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
+  const [selectedYear, setSelectedYear] = useState(defaultYear);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<'all' | string>('all');
+
+  const [formState, setFormState] = useState({
+    name: '',
+    amount: 0,
+    dueDate: formatISO(addMonths(new Date(), 1), { representation: 'date' }),
+    categoryId: expenseCategories[0]?.id ?? ''
+  });
+  useEffect(() => {
+    if (!expenseCategories.some((category) => category.id === formState.categoryId) && expenseCategories[0]) {
+      setFormState((prev) => ({ ...prev, categoryId: expenseCategories[0].id }));
+    }
+  }, [expenseCategories, formState.categoryId]);
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 
-  const categorySuggestions = useMemo(() => {
-    const spendByCategory = new Map<string, number>();
+  const categoryLookup = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
+  useEffect(() => {
+    if (selectedCategoryId !== 'all' && !categoryLookup.has(selectedCategoryId)) {
+      setSelectedCategoryId('all');
+    }
+  }, [categoryLookup, selectedCategoryId]);
+
+  const expenseDescendantsMap = useMemo(() => {
+    const childrenMap = new Map<string, string[]>();
+    expenseCategories.forEach((category) => {
+      if (!category.parentId) return;
+      const parent = categoryLookup.get(category.parentId);
+      if (!parent || parent.type !== 'expense') return;
+      const list = childrenMap.get(category.parentId) ?? [];
+      list.push(category.id);
+      childrenMap.set(category.parentId, list);
+    });
+    const map = new Map<string, Set<string>>();
+    const visit = (id: string): Set<string> => {
+      const existing = map.get(id);
+      if (existing) return existing;
+      const set = new Set<string>([id]);
+      (childrenMap.get(id) ?? []).forEach((childId) => {
+        visit(childId).forEach((descId) => set.add(descId));
+      });
+      map.set(id, set);
+      return set;
+    };
+    expenseCategories.forEach((category) => visit(category.id));
+    return map;
+  }, [expenseCategories, categoryLookup]);
+
+  const allExpenseIdsSet = useMemo(() => new Set(expenseCategories.map((category) => category.id)), [expenseCategories]);
+
+  const categoryMonthOptions = useMemo(() => {
+    const months = new Set<string>([selectedMonth, defaultMonth]);
+    plannedExpenses.forEach((item) => months.add(monthKey(item.dueDate)));
     transactions
       .filter((txn) => txn.amount < 0)
-      .forEach((txn) => {
-        if (txn.categoryId) {
-          spendByCategory.set(txn.categoryId, (spendByCategory.get(txn.categoryId) ?? 0) + Math.abs(txn.amount));
-        }
-      });
-    return [...categories]
-      .filter((category) => category.type === 'expense')
+      .forEach((txn) => months.add(monthKey(txn.date)));
+    return Array.from(months).sort((a, b) => (a > b ? -1 : 1));
+  }, [plannedExpenses, transactions, selectedMonth, defaultMonth]);
+
+  const categoryYearOptions = useMemo(() => {
+    const years = new Set<string>([selectedYear, defaultYear]);
+    plannedExpenses.forEach((item) => years.add(yearKey(item.dueDate)));
+    transactions
+      .filter((txn) => txn.amount < 0)
+      .forEach((txn) => years.add(yearKey(txn.date)));
+    return Array.from(years).sort((a, b) => (a > b ? -1 : 1));
+  }, [plannedExpenses, transactions, selectedYear, defaultYear]);
+
+  const periodPlannedExpenses = useMemo(
+    () =>
+      plannedExpenses.filter(
+        (item) =>
+          item.status !== 'cancelled' &&
+          (viewMode === 'monthly' ? monthKey(item.dueDate) === selectedMonth : yearKey(item.dueDate) === selectedYear)
+      ),
+    [plannedExpenses, viewMode, selectedMonth, selectedYear]
+  );
+
+  const periodTransactions = useMemo(
+    () =>
+      transactions.filter(
+        (txn) =>
+          txn.amount < 0 &&
+          (viewMode === 'monthly' ? monthKey(txn.date) === selectedMonth : yearKey(txn.date) === selectedYear)
+      ),
+    [transactions, viewMode, selectedMonth, selectedYear]
+  );
+
+  const categorySuggestions = useMemo(() => {
+    const spendByCategory = new Map<string, number>();
+    periodTransactions.forEach((txn) => {
+      if (txn.categoryId) {
+        spendByCategory.set(txn.categoryId, (spendByCategory.get(txn.categoryId) ?? 0) + Math.abs(txn.amount));
+      }
+    });
+    return [...expenseCategories]
       .sort((a, b) => (spendByCategory.get(b.id) ?? 0) - (spendByCategory.get(a.id) ?? 0))
       .slice(0, 5);
-  }, [categories, transactions]);
+  }, [expenseCategories, periodTransactions]);
 
-  const monthlyBudget = useMemo(() => {
-    const planned = plannedExpenses
-      .filter((item) => item.status === 'pending')
-      .reduce((sum, item) => sum + item.plannedAmount, 0);
-    const actual = transactions
-      .filter((txn) => txn.amount < 0)
-      .reduce((sum, txn) => sum + Math.abs(txn.amount), 0);
-    return { planned, actual, variance: planned - actual };
-  }, [plannedExpenses, transactions]);
+  const resolveCategoryIds = (categoryId: 'all' | string) => {
+    if (categoryId === 'all') return allExpenseIdsSet;
+    return expenseDescendantsMap.get(categoryId) ?? new Set<string>([categoryId]);
+  };
+
+  const computeTotals = (categoryId: 'all' | string) => {
+    const ids = resolveCategoryIds(categoryId);
+    const plannedItems = periodPlannedExpenses.filter((item) => ids.has(item.categoryId));
+    const plannedFromItems = plannedItems.reduce((sum, item) => sum + item.plannedAmount, 0);
+    const actualEntries = periodTransactions.filter(
+      (txn) => txn.categoryId && ids.has(txn.categoryId)
+    );
+    const actualTotal = actualEntries.reduce((sum, txn) => sum + Math.abs(txn.amount), 0);
+    const budgetTotal = Array.from(ids).reduce((sum, id) => {
+      const category = categoryLookup.get(id);
+      if (!category) return sum;
+      const budget = viewMode === 'monthly' ? category.budgets?.monthly : category.budgets?.yearly;
+      return sum + (budget ?? 0);
+    }, 0);
+    return {
+      plannedItems,
+      actualEntries,
+      plannedFromItems,
+      budgetTotal,
+      totalPlanned: plannedFromItems + budgetTotal,
+      actualTotal
+    };
+  };
+
+  const totalsForAll = useMemo(
+    () => computeTotals('all'),
+    [periodPlannedExpenses, periodTransactions, viewMode, categoryLookup, expenseDescendantsMap, allExpenseIdsSet]
+  );
+
+  const totalsForSelected = useMemo(
+    () => computeTotals(selectedCategoryId),
+    [selectedCategoryId, periodPlannedExpenses, periodTransactions, viewMode, categoryLookup, expenseDescendantsMap, allExpenseIdsSet]
+  );
 
   const reconciliations = useMemo(
     () =>
@@ -113,16 +251,139 @@ export function SmartBudgetingView() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-lg font-semibold">Budget vs Actuals</h3>
-            <p className="text-xs text-slate-500">Including all planned variable expenses</p>
+            <p className="text-xs text-slate-500">Including all planned variable expenses in the selected window</p>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-sm">
-            Planned: <span className="font-semibold text-warning">{formatCurrency(monthlyBudget.planned)}</span>{' '}
-            Actual: <span className="font-semibold text-danger">{formatCurrency(monthlyBudget.actual)}</span>{' '}
-            Variance: <span className="font-semibold text-success">{formatCurrency(monthlyBudget.variance)}</span>
+            Planned: <span className="font-semibold text-warning">{formatCurrency(totalsForAll.totalPlanned)}</span>{' '}
+            Actual: <span className="font-semibold text-danger">{formatCurrency(totalsForAll.actualTotal)}</span>{' '}
+            Variance:{' '}
+            <span
+              className={`font-semibold ${
+                totalsForAll.totalPlanned - totalsForAll.actualTotal >= 0 ? 'text-success' : 'text-danger'
+              }`}
+            >
+              {formatCurrency(totalsForAll.totalPlanned - totalsForAll.actualTotal)}
+            </span>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+          <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('monthly')}
+              className={`rounded-md px-3 py-1 font-semibold ${
+                viewMode === 'monthly' ? 'bg-accent text-slate-900' : 'text-slate-300'
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('yearly')}
+              className={`rounded-md px-3 py-1 font-semibold ${
+                viewMode === 'yearly' ? 'bg-accent text-slate-900' : 'text-slate-300'
+              }`}
+            >
+              Yearly
+            </button>
+          </div>
+          {viewMode === 'monthly' ? (
+            <select
+              className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+              value={selectedMonth}
+              onChange={(event) => setSelectedMonth(event.target.value)}
+            >
+              {categoryMonthOptions.map((month) => (
+                <option key={month} value={month}>
+                  {formatMonthLabel(month)}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <select
+              className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+              value={selectedYear}
+              onChange={(event) => setSelectedYear(event.target.value)}
+            >
+              {categoryYearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          )}
+          <select
+            className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+            value={selectedCategoryId}
+            onChange={(event) => setSelectedCategoryId(event.target.value as 'all' | string)}
+          >
+            <option value="all">All categories</option>
+            {expenseCategories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+          <span className="text-slate-500">Period: {viewMode === 'monthly' ? formatMonthLabel(selectedMonth) : selectedYear}</span>
+        </div>
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-[2fr,1fr]">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Planned vs Spent</h4>
+            <p className="text-xs text-slate-500">
+              Comparing planned items and category budgets against realised spending for the selected category.
+            </p>
+            <div className="mt-4 space-y-3">
+              {[{ label: 'Planned', value: totalsForSelected.totalPlanned, color: '#38bdf8' }, { label: 'Actual', value: totalsForSelected.actualTotal, color: '#ef4444' }].map((item) => {
+                const maxValue = Math.max(totalsForSelected.totalPlanned, totalsForSelected.actualTotal, 1);
+                const width = Math.max(6, Math.min(100, (item.value / maxValue) * 100));
+                return (
+                  <div key={item.label}>
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span>{item.label}</span>
+                      <span className="font-semibold text-slate-200">{formatCurrency(item.value)}</span>
+                    </div>
+                    <div className="mt-1 h-3 rounded-full bg-slate-800">
+                      <div
+                        className="h-3 rounded-full"
+                        style={{ width: `${width}%`, backgroundColor: item.color }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm">
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Category summary</h4>
+            <p className="mt-1 text-xs text-slate-500">
+              Focus: {selectedCategoryId === 'all' ? 'All expense categories' : categoryLookup.get(selectedCategoryId)?.name ?? 'Uncategorised'}
+            </p>
+            <dl className="mt-3 space-y-2 text-xs text-slate-300">
+              <div className="flex items-center justify-between">
+                <dt>Budget baseline</dt>
+                <dd className="font-semibold text-warning">{formatCurrency(totalsForSelected.budgetTotal)}</dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt>Planned items ({totalsForSelected.plannedItems.length})</dt>
+                <dd className="font-semibold text-slate-200">{formatCurrency(totalsForSelected.plannedFromItems)}</dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt>Actual spend ({totalsForSelected.actualEntries.length})</dt>
+                <dd className="font-semibold text-danger">{formatCurrency(totalsForSelected.actualTotal)}</dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt>Variance</dt>
+                <dd className={`font-semibold ${totalsForSelected.totalPlanned - totalsForSelected.actualTotal >= 0 ? 'text-success' : 'text-danger'}`}>
+                  {formatCurrency(totalsForSelected.totalPlanned - totalsForSelected.actualTotal)}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+
+        <div className="mt-8 grid gap-6 lg:grid-cols-2">
           <form onSubmit={handleSubmit} className="space-y-4">
             <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Add planned expense</h4>
             <div>
@@ -163,13 +424,11 @@ export function SmartBudgetingView() {
                   value={formState.categoryId}
                   onChange={(event) => setFormState((prev) => ({ ...prev, categoryId: event.target.value }))}
                 >
-                  {categories
-                    .filter((category) => category.type === 'expense')
-                    .map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
+                  {expenseCategories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
                 </select>
                 <button
                   type="button"
