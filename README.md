@@ -6,25 +6,25 @@ An offline-first Progressive Web App that aggregates Indian financial data, deli
 
 ### Install & run locally
 
-No third-party packages are required. Install the project and launch the embedded static server with:
-
 ```bash
 npm install
 npm run dev
 ```
 
-The server binds to `http://127.0.0.1:4173` by default, making it easy to exercise the PWA locally even in restricted environments.
+> **Tip:** If your environment proxies npm traffic, clear any enforced proxy variables or point npm to an accessible registry, e.g. `npm config set registry https://registry.npmjs.org`.
 
-To prepare a distributable snapshot in `dist/` and preview it:
+The Vite dev server binds to `http://127.0.0.1:5173` so the application can be launched locally on any workstation. When you are
+ready to ship a production bundle run:
 
 ```bash
 npm run build
 npm run preview
 ```
 
-Run the lightweight offline smoke test to validate that critical application files are present:
+Automated checks are available via:
 
 ```bash
+npm run lint
 npm run test
 ```
 
