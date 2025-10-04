@@ -246,62 +246,6 @@ export function SmartBudgetingView() {
     });
   }, [expenseCategories]);
 
-  useEffect(() => {
-    if (editingItemId && !periodPlannedExpenses.some((item) => item.id === editingItemId)) {
-      setEditingItemId(null);
-    }
-  }, [editingItemId, periodPlannedExpenses]);
-
-  useEffect(() => {
-    if (categoriesWithContent.length === 0) {
-      setFocusedCategoryId(null);
-      return;
-    }
-    if (!focusedCategoryId || !categoriesWithContent.some((category) => category.id === focusedCategoryId)) {
-      setFocusedCategoryId(categoriesWithContent[0].id);
-    }
-  }, [categoriesWithContent, focusedCategoryId]);
-
-  useEffect(() => {
-    if (!focusedCategoryId) {
-      setBudgetDraft('');
-      return;
-    }
-    const category = categoryLookup.get(focusedCategoryId);
-    if (!category) {
-      setBudgetDraft('');
-      return;
-    }
-    const budgetValue = viewMode === 'monthly' ? category.budgets?.monthly : category.budgets?.yearly;
-    setBudgetDraft(
-      typeof budgetValue === 'number' && !Number.isNaN(budgetValue) ? String(budgetValue) : ''
-    );
-  }, [focusedCategoryId, categoryLookup, viewMode]);
-
-  const spendingBadgeStyles: Record<PlannedExpenseSpendingHealth, { label: string; badgeClass: string; toneClass: string }> = {
-    'not-spent': {
-      label: 'Awaiting spend',
-      badgeClass: 'bg-slate-800 text-slate-300',
-      toneClass: 'text-slate-300'
-    },
-    under: {
-      label: 'Spent wisely',
-      badgeClass: 'bg-success/20 text-success',
-      toneClass: 'text-success'
-    },
-    over: {
-      label: 'Overspent',
-      badgeClass: 'bg-danger/20 text-danger',
-      toneClass: 'text-danger'
-    }
-  };
-
-  const progressColorByStatus: Record<PlannedExpenseSpendingHealth, string> = {
-    'not-spent': '#38bdf8',
-    under: '#10b981',
-    over: '#ef4444'
-  };
-
   const plannedExpenseDetails = useMemo<PlannedExpenseDetail[]>(() => {
     return periodPlannedExpenses
       .map((item) => {
@@ -406,6 +350,68 @@ export function SmartBudgetingView() {
     return { itemsByCategory: byCategory, categorySummaries: summaries };
   }, [plannedExpenseDetails, expenseCategories, expenseDescendantsMap]);
 
+  const categoriesWithContent = useMemo(
+    () =>
+      expenseCategories.filter((category) => (categorySummaries.get(category.id)?.itemCount ?? 0) > 0),
+    [expenseCategories, categorySummaries]
+  );
+
+  useEffect(() => {
+    if (editingItemId && !periodPlannedExpenses.some((item) => item.id === editingItemId)) {
+      setEditingItemId(null);
+    }
+  }, [editingItemId, periodPlannedExpenses]);
+
+  useEffect(() => {
+    if (categoriesWithContent.length === 0) {
+      setFocusedCategoryId(null);
+      return;
+    }
+    if (!focusedCategoryId || !categoriesWithContent.some((category) => category.id === focusedCategoryId)) {
+      setFocusedCategoryId(categoriesWithContent[0].id);
+    }
+  }, [categoriesWithContent, focusedCategoryId]);
+
+  useEffect(() => {
+    if (!focusedCategoryId) {
+      setBudgetDraft('');
+      return;
+    }
+    const category = categoryLookup.get(focusedCategoryId);
+    if (!category) {
+      setBudgetDraft('');
+      return;
+    }
+    const budgetValue = viewMode === 'monthly' ? category.budgets?.monthly : category.budgets?.yearly;
+    setBudgetDraft(
+      typeof budgetValue === 'number' && !Number.isNaN(budgetValue) ? String(budgetValue) : ''
+    );
+  }, [focusedCategoryId, categoryLookup, viewMode]);
+
+  const spendingBadgeStyles: Record<PlannedExpenseSpendingHealth, { label: string; badgeClass: string; toneClass: string }> = {
+    'not-spent': {
+      label: 'Awaiting spend',
+      badgeClass: 'bg-slate-800 text-slate-300',
+      toneClass: 'text-slate-300'
+    },
+    under: {
+      label: 'Spent wisely',
+      badgeClass: 'bg-success/20 text-success',
+      toneClass: 'text-success'
+    },
+    over: {
+      label: 'Overspent',
+      badgeClass: 'bg-danger/20 text-danger',
+      toneClass: 'text-danger'
+    }
+  };
+
+  const progressColorByStatus: Record<PlannedExpenseSpendingHealth, string> = {
+    'not-spent': '#38bdf8',
+    under: '#10b981',
+    over: '#ef4444'
+  };
+
   const uncategorisedDetails = useMemo(
     () => plannedExpenseDetails.filter((detail) => !expenseCategoryIds.has(detail.item.categoryId)),
     [plannedExpenseDetails, expenseCategoryIds]
@@ -434,12 +440,6 @@ export function SmartBudgetingView() {
         : 'over';
     return { planned, actual, variance, status };
   }, [plannedExpenseDetails]);
-
-  const categoriesWithContent = useMemo(
-    () =>
-      expenseCategories.filter((category) => (categorySummaries.get(category.id)?.itemCount ?? 0) > 0),
-    [expenseCategories, categorySummaries]
-  );
 
   const overspendingCategories = useMemo(() => {
     const list: Array<{
