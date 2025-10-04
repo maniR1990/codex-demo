@@ -24,12 +24,19 @@ export interface Account extends Timestamped {
   notes?: string;
 }
 
+export interface CategoryBudgets {
+  monthly?: number;
+  yearly?: number;
+}
+
 export interface Category extends Timestamped {
   id: string;
   name: string;
   type: 'income' | 'expense' | 'asset' | 'liability';
   isCustom: boolean;
   parentId?: string;
+  tags: string[];
+  budgets?: CategoryBudgets;
 }
 
 export interface Transaction extends Timestamped {
