@@ -712,15 +712,43 @@ export function IncomeManagementView() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h2 className="text-2xl font-semibold">Income & Category Management</h2>
-        <p className="text-sm text-slate-400">
-          Capture month-specific income variations, maintain category hierarchies with budgets, and enrich every node with
-          tags for future-scale analytics.
-        </p>
+      <header className="space-y-4">
+        <div className="space-y-2">
+          <h2 className="text-2xl font-semibold">Income & Category Management</h2>
+          <p className="text-sm text-slate-400">
+            Capture month-specific income variations, maintain category hierarchies with budgets, and enrich every node
+            with tags for future-scale analytics.
+          </p>
+        </div>
+        <nav
+          aria-label="Income & Category Management shortcuts"
+          className="flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:flex-row sm:items-start"
+        >
+          <a
+            className="flex-1 rounded-xl border border-slate-800 bg-slate-950/60 p-4 transition hover:border-accent hover:text-accent"
+            href="#monthly-income-tracker"
+          >
+            <span className="block text-sm font-semibold text-slate-200">Monthly income tracker</span>
+            <span className="mt-1 block text-xs text-slate-500">
+              Log the exact receipts for each month or year to mirror real-world cash flow swings.
+            </span>
+          </a>
+          <a
+            className="flex-1 rounded-xl border border-slate-800 bg-slate-950/60 p-4 transition hover:border-accent hover:text-accent"
+            href="#category-governance"
+          >
+            <span className="block text-sm font-semibold text-slate-200">Category governance</span>
+            <span className="mt-1 block text-xs text-slate-500">
+              Navigate directly to manage hierarchies, budgets, and tags that steer disciplined spending.
+            </span>
+          </a>
+        </nav>
       </header>
 
-      <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
+      <section
+        id="monthly-income-tracker"
+        className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6"
+      >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-lg font-semibold">Monthly income tracker</h3>
@@ -995,7 +1023,10 @@ export function IncomeManagementView() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
+      <section
+        id="category-governance"
+        className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6"
+      >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-lg font-semibold">Category governance</h3>
