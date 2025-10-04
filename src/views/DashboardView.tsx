@@ -155,7 +155,7 @@ function SavingsGauge({ savingsRate, income, expenses }: { savingsRate: number; 
               strokeLinecap="round"
               transform="rotate(-90 18 18)"
             />
-            <text x="18" y="20.35" className="fill-slate-100 text-lg" textAnchor="middle">
+            <text x="18" y="20.35" className="fill-slate-100 text-base font-semibold" textAnchor="middle">
               {savingsRate.toFixed(1)}%
             </text>
           </svg>

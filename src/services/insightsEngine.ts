@@ -7,7 +7,8 @@ import type {
   PlannedExpenseItem,
   RecurringExpense,
   Transaction,
-  MonthlyIncome
+  MonthlyIncome,
+  Profile
 } from '../types';
 
 interface InsightInput {
@@ -18,11 +19,23 @@ interface InsightInput {
   goals: Goal[];
   categories: Category[];
   monthlyIncomes: MonthlyIncome[];
+  currency?: Profile['currency'];
 }
 
 export function generateInsights(input: InsightInput): Insight[] {
   const insights: Insight[] = [];
   const now = new Date().toISOString();
+  const currencyFormatter = new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: input.currency ?? 'INR',
+    maximumFractionDigits: 0
+  });
+
+  const percentageFormatter = new Intl.NumberFormat('en-IN', {
+    style: 'percent',
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1
+  });
 
   const totalIncomeFromTransactions = input.transactions
     .filter((txn) => txn.amount > 0)
@@ -34,14 +47,39 @@ export function generateInsights(input: InsightInput): Insight[] {
     .reduce((sum, txn) => sum + Math.abs(txn.amount), 0);
 
   if (totalIncome > 0) {
-    const savingsRate = ((totalIncome - totalExpenses) / totalIncome) * 100;
+    const savingsRate = (totalIncome - totalExpenses) / totalIncome;
+    const formattedSavingsRate = percentageFormatter.format(savingsRate);
+    const targetSavingsRate = 0.4;
+    const desiredMonthlySavings = targetSavingsRate * totalIncome;
+    const currentMonthlySavings = totalIncome - totalExpenses;
+    const additionalSavingsNeeded = Math.max(desiredMonthlySavings - currentMonthlySavings, 0);
     insights.push({
       id: 'insight-savings-rate',
       title: 'Savings Rate Check',
-      description: `Your savings rate is ${savingsRate.toFixed(1)}%. Consider targeting 40%+ to accelerate investments.`,
-      severity: savingsRate < 30 ? 'warning' : 'info',
+      description: `Your savings rate is ${formattedSavingsRate}. Consider targeting 40%+ to accelerate investments.`,
+      severity: savingsRate < 0.3 ? 'warning' : 'info',
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      metricSummary: {
+        label: 'Current monthly savings',
+        value: currencyFormatter.format(currentMonthlySavings),
+        helperText: `Based on ${currencyFormatter.format(totalExpenses)} in monthly expenses.`
+      },
+      recommendations: [
+        'Automate a monthly transfer into your investment account for the target savings amount.',
+        'Audit the top three discretionary categories to find quick 5-10% reductions.'
+      ],
+      projection:
+        additionalSavingsNeeded > 0
+          ? {
+              title: 'Path to 40% savings rate',
+              description: 'Reducing discretionary spends unlocks additional investable surplus each month.',
+              currentValue: currentMonthlySavings,
+              projectedValue: desiredMonthlySavings,
+              timeframe: 'Next 30 days',
+              unit: 'currency'
+            }
+          : undefined
     });
   }
 
@@ -56,10 +94,14 @@ export function generateInsights(input: InsightInput): Insight[] {
     insights.push({
       id: 'insight-next-recurring',
       title: 'Upcoming recurring payment',
-      description: `${nextRecurring.name} is due soon at ₹${nextRecurring.amount.toLocaleString('en-IN')}. Ensure the budget is allocated.`,
+      description: `${nextRecurring.name} is due soon at ${currencyFormatter.format(nextRecurring.amount)}. Ensure the budget is allocated.`,
       severity: 'info',
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      recommendations: [
+        'Enable autopay or calendar reminders to avoid last-minute cash crunches.',
+        'Park the amount in a high-yield savings bucket until the debit date.'
+      ]
     });
   }
 
@@ -69,10 +111,14 @@ export function generateInsights(input: InsightInput): Insight[] {
     insights.push({
       id: 'insight-planned-spend',
       title: 'Review planned variable expenses',
-      description: `You have ₹${totalPlanned.toLocaleString('en-IN')} of planned spends. Consider staggering purchases to reduce cash flow stress.`,
+      description: `You have ${currencyFormatter.format(totalPlanned)} of planned spends. Consider staggering purchases to reduce cash flow stress.`,
       severity: 'warning',
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      recommendations: [
+        'Tag each planned item as essential or deferrable to make trade-offs explicit.',
+        'Convert large purchases into short-term sinking funds before committing.'
+      ]
     });
   }
 
@@ -87,7 +133,12 @@ export function generateInsights(input: InsightInput): Insight[] {
       description: 'Loan balances are more than 50% of liquid assets. Consider accelerating repayments.',
       severity: 'critical',
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      recommendations: [
+        'Channel every bonus or windfall toward the smallest balance first (debt snowball).',
+        'Assess refinancing offers to cut your blended interest rate by 1-2%.',
+        'Pause new discretionary EMI commitments until leverage drops below 35%.'
+      ]
     });
   }
 
@@ -99,7 +150,11 @@ export function generateInsights(input: InsightInput): Insight[] {
       description: `You are tracking ${customExpenseCategories.length} custom expense categories. Continue refining to improve AI recommendations.`,
       severity: 'info',
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      recommendations: [
+        'Add budgeting targets for each custom bucket to unlock hyper-personal nudges.',
+        'Map custom categories to long-term goals so progress can be measured monthly.'
+      ]
     });
   }
 
@@ -111,7 +166,11 @@ export function generateInsights(input: InsightInput): Insight[] {
       description: `${uncoveredIncome.length} income entries are uncategorised. Tag them to align tax planning and savings goals.`,
       severity: 'warning',
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      recommendations: [
+        'Link each inflow to a goal (Emergency fund, SIP, debt payoff) to auto-allocate surplus.',
+        'Set a recurring rule to auto-tag salary, reimbursements, and side hustles.'
+      ]
     });
   }
 
