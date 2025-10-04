@@ -363,14 +363,16 @@ export function SmartBudgetingView() {
   }, [editingItemId, periodPlannedExpenses]);
 
   useEffect(() => {
-    if (categoriesWithContent.length === 0) {
+    const fallbackCategories =
+      categoriesWithContent.length > 0 ? categoriesWithContent : expenseCategories;
+    if (fallbackCategories.length === 0) {
       setFocusedCategoryId(null);
       return;
     }
-    if (!focusedCategoryId || !categoriesWithContent.some((category) => category.id === focusedCategoryId)) {
-      setFocusedCategoryId(categoriesWithContent[0].id);
+    if (!focusedCategoryId || !fallbackCategories.some((category) => category.id === focusedCategoryId)) {
+      setFocusedCategoryId(fallbackCategories[0].id);
     }
-  }, [categoriesWithContent, focusedCategoryId]);
+  }, [categoriesWithContent, expenseCategories, focusedCategoryId]);
 
   useEffect(() => {
     if (!focusedCategoryId) {
@@ -937,9 +939,8 @@ export function SmartBudgetingView() {
       return null;
     }
 
-    if (!hasVisibleItems && !hasVisibleChildren && !matchesCategorySearch && summary.itemCount === 0) {
-      return null;
-    }
+    // Always render expense categories so they can be focused for baseline adjustments,
+    // even if they don't yet have planned items in the current period.
 
     const progressPercentRaw =
       summary.planned <= 0 ? (summary.actual > 0 ? 100 : 0) : (summary.actual / summary.planned) * 100;
