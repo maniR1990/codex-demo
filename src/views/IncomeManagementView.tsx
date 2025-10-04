@@ -22,6 +22,28 @@ interface CategorySummary {
   plannedItems: PlannedExpenseItem[];
 }
 
+interface CategoryDraftForm {
+  id: string;
+  name: string;
+  type: Category['type'];
+  parentId: string;
+  tags: string;
+  monthlyBudget: string;
+  yearlyBudget: string;
+}
+
+function createBlankDraft(type: Category['type'] = 'income'): CategoryDraftForm {
+  return {
+    id: Math.random().toString(36).slice(2),
+    name: '',
+    type,
+    parentId: '',
+    tags: '',
+    monthlyBudget: '',
+    yearlyBudget: ''
+  };
+}
+
 function monthKey(date: string) {
   return date.slice(0, 7);
 }
@@ -188,15 +210,6 @@ export function IncomeManagementView() {
     [monthlyIncomes]
   );
 
-  const [categoryForm, setCategoryForm] = useState({
-    name: '',
-    type: 'income' as Category['type'],
-    parentId: '',
-    tags: '',
-    monthlyBudget: '',
-    yearlyBudget: ''
-  });
-
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryState, setEditingCategoryState] = useState({
     name: '',
@@ -324,6 +337,8 @@ export function IncomeManagementView() {
 
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
   const [activeSection, setActiveSection] = useState<'income' | 'category'>('income');
+  const [isCreatePanelOpen, setIsCreatePanelOpen] = useState(false);
+  const [categoryDrafts, setCategoryDrafts] = useState<CategoryDraftForm[]>([]);
 
   const toggleNode = (id: string) => {
     setExpandedNodes((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -331,6 +346,35 @@ export function IncomeManagementView() {
 
   const ensureNodeExpanded = (id: string) => {
     setExpandedNodes((prev) => ({ ...prev, [id]: true }));
+  };
+
+  const openCreatePanel = () => {
+    setIsCreatePanelOpen(true);
+    setCategoryDrafts((prev) => (prev.length > 0 ? prev : [createBlankDraft()]));
+  };
+
+  const closeCreatePanel = () => {
+    setIsCreatePanelOpen(false);
+    setCategoryDrafts([]);
+  };
+
+  function updateDraft<Key extends keyof CategoryDraftForm>(
+    id: string,
+    key: Key,
+    value: CategoryDraftForm[Key]
+  ) {
+    setCategoryDrafts((prev) => prev.map((draft) => (draft.id === id ? { ...draft, [key]: value } : draft)));
+  }
+
+  const addDraftRow = () => {
+    setCategoryDrafts((prev) => {
+      const lastType = prev[prev.length - 1]?.type ?? 'income';
+      return [...prev, createBlankDraft(lastType)];
+    });
+  };
+
+  const removeDraftRow = (id: string) => {
+    setCategoryDrafts((prev) => prev.filter((draft) => draft.id !== id));
   };
 
   const handleIncomeSubmit = async (event: FormEvent) => {
@@ -371,33 +415,47 @@ export function IncomeManagementView() {
     setEditingIncomeId(null);
   };
 
-  const handleAddCategory = async (event: FormEvent) => {
+  const handleCreateCategories = async (event: FormEvent) => {
     event.preventDefault();
-    if (!categoryForm.name.trim()) return;
-    const tags = categoryForm.tags
-      .split(',')
-      .map((tag) => tag.trim().toLowerCase())
-      .filter((tag, index, array) => tag.length > 0 && array.indexOf(tag) === index);
-    const monthlyBudget = categoryForm.monthlyBudget.trim() ? Number(categoryForm.monthlyBudget) : undefined;
-    const yearlyBudget = categoryForm.yearlyBudget.trim() ? Number(categoryForm.yearlyBudget) : undefined;
-    const category = await addCategory({
-      name: categoryForm.name,
-      type: categoryForm.type,
-      parentId: categoryForm.parentId || undefined,
-      tags,
-      budgets:
-        monthlyBudget !== undefined || yearlyBudget !== undefined
-          ? {
-              ...(monthlyBudget !== undefined ? { monthly: monthlyBudget } : {}),
-              ...(yearlyBudget !== undefined ? { yearly: yearlyBudget } : {})
-            }
-          : undefined,
-      isCustom: true
-    });
-    if (category.type === 'income') {
-      setIncomeForm((prev) => ({ ...prev, categoryId: category.id }));
+    const draftsToCreate = categoryDrafts.filter((draft) => draft.name.trim());
+    if (draftsToCreate.length === 0) return;
+
+    const created: Category[] = [];
+
+    for (const draft of draftsToCreate) {
+      const tags = draft.tags
+        .split(',')
+        .map((tag) => tag.trim().toLowerCase())
+        .filter((tag, index, array) => tag.length > 0 && array.indexOf(tag) === index);
+      const monthlyBudget = draft.monthlyBudget.trim() ? Number(draft.monthlyBudget) : undefined;
+      const yearlyBudget = draft.yearlyBudget.trim() ? Number(draft.yearlyBudget) : undefined;
+
+      const category = await addCategory({
+        name: draft.name,
+        type: draft.type,
+        parentId: draft.parentId || undefined,
+        tags,
+        budgets:
+          monthlyBudget !== undefined || yearlyBudget !== undefined
+            ? {
+                ...(monthlyBudget !== undefined ? { monthly: monthlyBudget } : {}),
+                ...(yearlyBudget !== undefined ? { yearly: yearlyBudget } : {})
+              }
+            : undefined,
+        isCustom: true
+      });
+
+      created.push(category);
     }
-    setCategoryForm({ name: '', type: 'income', parentId: '', tags: '', monthlyBudget: '', yearlyBudget: '' });
+
+    const lastIncomeCategory = [...created].reverse().find((category) => category.type === 'income');
+    if (lastIncomeCategory) {
+      setIncomeForm((prev) => ({ ...prev, categoryId: lastIncomeCategory.id }));
+    }
+
+    const defaultType = draftsToCreate[draftsToCreate.length - 1]?.type ?? 'income';
+    setCategoryDrafts([createBlankDraft(defaultType)]);
+    setIsCreatePanelOpen(false);
   };
 
   const startEditingCategory = (categoryId: string) => {
@@ -446,270 +504,289 @@ export function IncomeManagementView() {
     setEditingCategoryId(null);
   };
 
-  const parentOptions = useMemo(
-    () =>
-      categories.filter((category) => category.type === categoryForm.type),
-    [categories, categoryForm.type]
-  );
-
   const incomePeriodLabel = incomeViewMode === 'monthly' ? formatMonthLabel(selectedIncomeMonth) : selectedIncomeYear;
   const categoryPeriodLabel =
     categoryViewMode === 'monthly' ? formatMonthLabel(selectedCategoryMonth) : selectedCategoryYear;
 
-  const renderCategoryNodes = (nodes: CategoryNode[]) => (
-    <ul className="space-y-3">
-      {nodes.map((node) => {
-        const summary = summariseNode(node);
-        const isExpanded = expandedNodes[node.category.id] ?? false;
-        const isEditing = editingCategoryId === node.category.id;
-        const hasDetails =
-          node.children.length > 0 || summary.transactions.length > 0 || summary.plannedItems.length > 0;
-        const variance = summary.plannedTotal - summary.totalSpent;
-        const nodeBudget = categoryBudgetMap.get(node.category.id);
-        const hasBudget = nodeBudget !== undefined;
-        const invalidParents = descendantMap.get(node.category.id) ?? new Set<string>([node.category.id]);
-        const editParentOptions = categories.filter(
-          (category) =>
-            category.type === editingCategoryState.type &&
-            category.id !== node.category.id &&
-            !invalidParents.has(category.id)
-        );
+  const renderCategoryRows = (nodes: CategoryNode[], level = 0): JSX.Element[] => {
+    return nodes.flatMap((node) => {
+      const summary = summariseNode(node);
+      const isExpanded = expandedNodes[node.category.id] ?? false;
+      const isEditing = editingCategoryId === node.category.id;
+      const hasChildren = node.children.length > 0;
+      const hasTransactions = summary.transactions.length > 0;
+      const hasPlans = summary.plannedItems.length > 0;
+      const canExpand = hasChildren || hasTransactions || hasPlans;
+      const variance = summary.plannedTotal - summary.totalSpent;
+      const nodeBudget = categoryBudgetMap.get(node.category.id);
+      const invalidParents = descendantMap.get(node.category.id) ?? new Set<string>([node.category.id]);
+      const editParentOptions = categories.filter(
+        (category) =>
+          category.type === editingCategoryState.type &&
+          category.id !== node.category.id &&
+          !invalidParents.has(category.id)
+      );
 
-        return (
-          <li key={node.category.id} className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-sm">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button
-                type="button"
-                className={`inline-flex items-center gap-2 text-left font-semibold ${
-                  hasDetails ? 'text-slate-100' : 'cursor-default text-slate-400'
-                }`}
-                onClick={() => (hasDetails ? toggleNode(node.category.id) : undefined)}
-              >
-                <span className="text-xs text-slate-500">{node.category.type.toUpperCase()}</span>
-                <span>{node.category.name}</span>
-                {hasDetails && <span className="text-xs text-slate-500">{isExpanded ? '▾' : '▸'}</span>}
-              </button>
-              <div className="flex flex-wrap gap-2">
+      const baseRow = (
+        <tr key={node.category.id} className="bg-slate-950/60">
+          <td className="px-4 py-3 align-top">
+            <div className="flex items-start gap-3" style={{ paddingLeft: `${level * 1.25}rem` }}>
+              {canExpand ? (
                 <button
                   type="button"
-                  className="rounded-lg border border-slate-700 px-3 py-1 text-xs font-semibold"
-                  onClick={() => startEditingCategory(node.category.id)}
+                  onClick={() => toggleNode(node.category.id)}
+                  className="mt-1 inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-700 bg-slate-900 text-xs"
+                  aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${node.category.name}`}
                 >
-                  Edit
+                  {isExpanded ? '▾' : '▸'}
                 </button>
-                <button
-                  type="button"
-                  className="rounded-lg bg-danger/20 px-3 py-1 text-xs font-semibold text-danger"
-                  onClick={() => deleteCategory(node.category.id)}
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <p className="text-slate-400">Planned this period</p>
-                <p className="text-warning font-semibold">{formatCurrency(summary.plannedTotal)}</p>
-              </div>
-              <div>
-                <p className="text-slate-400">Actual spend</p>
-                <p className="text-danger font-semibold">{formatCurrency(summary.totalSpent)}</p>
-              </div>
-              <div>
-                <p className="text-slate-400">Recorded income</p>
-                <p className="text-success font-semibold">{formatCurrency(summary.totalIncome)}</p>
-              </div>
-              <div>
-                <p className="text-slate-400">Variance</p>
-                <p className={variance >= 0 ? 'text-success font-semibold' : 'text-danger font-semibold'}>
-                  {formatCurrency(variance)}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-400">
-              {hasBudget ? (
-                <span className="rounded-full bg-warning/10 px-2 py-1 text-warning">
-                  Budget baseline: {formatCurrency(nodeBudget ?? 0)}
-                </span>
               ) : (
-                <span className="rounded-full bg-slate-800 px-2 py-1">No baseline budget</span>
+                <span className="mt-2 text-slate-700">•</span>
               )}
-              {node.category.tags.length > 0 &&
-                node.category.tags.map((tag) => (
-                  <span key={tag} className="rounded-full bg-slate-800 px-2 py-1 uppercase tracking-wide text-slate-300">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-slate-100">{node.category.name}</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">{node.category.type}</p>
+              </div>
+            </div>
+          </td>
+          <td className="px-4 py-3 text-sm text-slate-300">
+            {typeof nodeBudget === 'number' ? formatCurrency(nodeBudget) : <span className="text-slate-600">—</span>}
+          </td>
+          <td className="px-4 py-3 text-sm text-warning">{formatCurrency(summary.plannedTotal)}</td>
+          <td className="px-4 py-3 text-sm text-danger">{formatCurrency(summary.totalSpent)}</td>
+          <td className="px-4 py-3 text-sm text-success">{formatCurrency(summary.totalIncome)}</td>
+          <td className="px-4 py-3 text-sm">
+            <span className={variance >= 0 ? 'text-success font-semibold' : 'text-danger font-semibold'}>
+              {formatCurrency(variance)}
+            </span>
+          </td>
+          <td className="px-4 py-3 text-sm text-slate-300">
+            {node.category.tags.length > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {node.category.tags.map((tag) => (
+                  <span key={tag} className="rounded-full bg-slate-800 px-2 py-1 text-[11px] uppercase tracking-wide">
                     #{tag}
                   </span>
                 ))}
+              </div>
+            ) : (
+              <span className="text-slate-600">No tags</span>
+            )}
+          </td>
+          <td className="px-4 py-3 text-right text-sm">
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-slate-700 px-3 py-1 text-xs font-semibold"
+                onClick={() => startEditingCategory(node.category.id)}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-danger/20 px-3 py-1 text-xs font-semibold text-danger"
+                onClick={() => deleteCategory(node.category.id)}
+              >
+                Delete
+              </button>
             </div>
+          </td>
+        </tr>
+      );
 
-            {isExpanded && (
-              <div className="mt-4 space-y-4 border-t border-slate-800 pt-4">
-                {isEditing ? (
-                  <form onSubmit={handleCategoryUpdate} className="space-y-3 text-xs">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="flex flex-col gap-1">
-                        <span className="uppercase text-slate-500">Name</span>
-                        <input
-                          required
-                          className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
-                          value={editingCategoryState.name}
-                          onChange={(event) =>
-                            setEditingCategoryState((prev) => ({ ...prev, name: event.target.value }))
-                          }
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1">
-                        <span className="uppercase text-slate-500">Type</span>
-                        <select
-                          className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
-                          value={editingCategoryState.type}
-                          onChange={(event) =>
-                            setEditingCategoryState((prev) => ({
-                              ...prev,
-                              type: event.target.value as Category['type'],
-                              parentId: ''
-                            }))
-                          }
-                        >
-                          {categoryTypes.map((type) => (
-                            <option key={type} value={type}>
-                              {type.charAt(0).toUpperCase() + type.slice(1)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="flex flex-col gap-1">
-                        <span className="uppercase text-slate-500">Parent</span>
-                        <select
-                          className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
-                          value={editingCategoryState.parentId}
-                          onChange={(event) =>
-                            setEditingCategoryState((prev) => ({ ...prev, parentId: event.target.value }))
-                          }
-                        >
-                          <option value="">No parent</option>
-                          {editParentOptions.map((option) => (
-                            <option key={option.id} value={option.id}>
-                              {option.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="flex flex-col gap-1">
-                        <span className="uppercase text-slate-500">Tags</span>
-                        <input
-                          className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
-                          value={editingCategoryState.tags}
-                          onChange={(event) =>
-                            setEditingCategoryState((prev) => ({ ...prev, tags: event.target.value }))
-                          }
-                          placeholder="comma separated"
-                        />
-                      </label>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="flex flex-col gap-1">
-                        <span className="uppercase text-slate-500">Monthly budget</span>
-                        <input
-                          type="number"
-                          min={0}
-                          className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
-                          value={editingCategoryState.monthlyBudget}
-                          onChange={(event) =>
-                            setEditingCategoryState((prev) => ({ ...prev, monthlyBudget: event.target.value }))
-                          }
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1">
-                        <span className="uppercase text-slate-500">Yearly budget</span>
-                        <input
-                          type="number"
-                          min={0}
-                          className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
-                          value={editingCategoryState.yearlyBudget}
-                          onChange={(event) =>
-                            setEditingCategoryState((prev) => ({ ...prev, yearlyBudget: event.target.value }))
-                          }
-                        />
-                      </label>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="submit"
-                        className="rounded-lg bg-success/20 px-4 py-2 text-xs font-semibold text-success"
+      const detailRow = isExpanded ? (
+        <tr key={`${node.category.id}-details`} className="border-t border-slate-900/60">
+          <td colSpan={8} className="px-6 pb-5 pt-4">
+            {isEditing ? (
+              <form onSubmit={handleCategoryUpdate} className="space-y-4 text-xs">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="uppercase text-slate-500">Name</span>
+                    <input
+                      required
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+                      value={editingCategoryState.name}
+                      onChange={(event) =>
+                        setEditingCategoryState((prev) => ({ ...prev, name: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="uppercase text-slate-500">Type</span>
+                    <select
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+                      value={editingCategoryState.type}
+                      onChange={(event) =>
+                        setEditingCategoryState((prev) => ({
+                          ...prev,
+                          type: event.target.value as Category['type'],
+                          parentId: ''
+                        }))
+                      }
+                    >
+                      {categoryTypes.map((type) => (
+                        <option key={type} value={type}>
+                          {type.charAt(0).toUpperCase() + type.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="uppercase text-slate-500">Parent</span>
+                    <select
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+                      value={editingCategoryState.parentId}
+                      onChange={(event) =>
+                        setEditingCategoryState((prev) => ({ ...prev, parentId: event.target.value }))
+                      }
+                    >
+                      <option value="">No parent</option>
+                      {editParentOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="uppercase text-slate-500">Tags</span>
+                    <input
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+                      value={editingCategoryState.tags}
+                      onChange={(event) =>
+                        setEditingCategoryState((prev) => ({ ...prev, tags: event.target.value }))
+                      }
+                      placeholder="e.g. bill, essentials"
+                    />
+                  </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="uppercase text-slate-500">Monthly budget (₹)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+                      value={editingCategoryState.monthlyBudget}
+                      onChange={(event) =>
+                        setEditingCategoryState((prev) => ({ ...prev, monthlyBudget: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="uppercase text-slate-500">Yearly budget (₹)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+                      value={editingCategoryState.yearlyBudget}
+                      onChange={(event) =>
+                        setEditingCategoryState((prev) => ({ ...prev, yearlyBudget: event.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-accent px-4 py-2 font-semibold text-slate-900 hover:bg-sky-300"
+                  >
+                    Save category
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelCategoryEdit}
+                    className="rounded-lg border border-slate-700 px-4 py-2 font-semibold"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-4 text-xs">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <p className="text-slate-400">Planned this period</p>
+                    <p className="text-warning font-semibold">{formatCurrency(summary.plannedTotal)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400">Actual spend</p>
+                    <p className="text-danger font-semibold">{formatCurrency(summary.totalSpent)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400">Recorded income</p>
+                    <p className="text-success font-semibold">{formatCurrency(summary.totalIncome)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400">Variance</p>
+                    <p className={variance >= 0 ? 'text-success font-semibold' : 'text-danger font-semibold'}>
+                      {formatCurrency(variance)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 text-[11px] text-slate-400">
+                  {typeof nodeBudget === 'number' ? (
+                    <span className="rounded-full bg-warning/10 px-2 py-1 text-warning">
+                      Budget baseline: {formatCurrency(nodeBudget)}
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-slate-800 px-2 py-1">No baseline budget</span>
+                  )}
+                  {node.category.tags.length > 0 &&
+                    node.category.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full bg-slate-800 px-2 py-1 uppercase tracking-wide text-slate-300"
                       >
-                        Save changes
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-100"
-                        onClick={cancelCategoryEdit}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
+                        #{tag}
+                      </span>
+                    ))}
+                </div>
+                {hasTransactions ? (
+                  <div className="space-y-2">
+                    <h5 className="text-[11px] uppercase tracking-wide text-slate-500">Recent transactions</h5>
+                    <ul className="space-y-2">
+                      {summary.transactions.slice(0, 5).map((txn) => (
+                        <li key={txn.id} className="flex justify-between rounded-lg bg-slate-900/80 px-3 py-2">
+                          <span>{txn.description || txn.merchant || 'Unnamed transaction'}</span>
+                          <span className="font-semibold text-danger">{formatCurrency(Math.abs(txn.amount))}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ) : (
-                  <>
-                    {summary.transactions.length > 0 && (
-                      <div className="space-y-2">
-                        <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                          Transactions
-                        </h5>
-                        <ul className="space-y-2">
-                          {summary.transactions.map((txn) => (
-                            <li key={txn.id} className="flex items-center justify-between text-xs">
-                              <span>
-                                {format(parseISO(txn.date), 'd MMM yyyy')} • {txn.description}
-                              </span>
-                              <span className={txn.amount < 0 ? 'text-danger font-semibold' : 'text-success font-semibold'}>
-                                {formatCurrency(txn.amount)}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {summary.plannedItems.length > 0 && (
-                      <div className="space-y-2">
-                        <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                          Planned items
-                        </h5>
-                        <ul className="space-y-2">
-                          {summary.plannedItems.map((item) => (
-                            <li key={item.id} className="flex items-center justify-between text-xs">
-                              <span>
-                                {format(parseISO(item.dueDate), 'd MMM yyyy')} • {item.name}
-                              </span>
-                              <span className="font-semibold text-warning">
-                                {formatCurrency(item.plannedAmount)}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {node.children.length > 0 && (
-                      <div>
-                        <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Sub-categories</h5>
-                        <div className="mt-2 space-y-3 border-l border-slate-800 pl-4">
-                          {renderCategoryNodes(node.children)}
-                        </div>
-                      </div>
-                    )}
-                  </>
+                  <p className="text-[11px] text-slate-500">No transactions recorded for this node.</p>
+                )}
+                {hasPlans ? (
+                  <div className="space-y-2">
+                    <h5 className="text-[11px] uppercase tracking-wide text-slate-500">Upcoming planned items</h5>
+                    <ul className="space-y-2">
+                      {summary.plannedItems.slice(0, 5).map((item) => (
+                        <li key={item.id} className="flex justify-between rounded-lg bg-slate-900/80 px-3 py-2">
+                          <span>{item.description}</span>
+                          <span className="font-semibold text-warning">
+                            {formatCurrency(item.plannedAmount)} on {format(parseISO(item.dueDate), 'dd MMM yyyy')}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500">No planned expense items linked to this node.</p>
                 )}
               </div>
             )}
-          </li>
-        );
-      })}
-    </ul>
-  );
+          </td>
+        </tr>
+      ) : null;
+
+      const childRows = isExpanded ? renderCategoryRows(node.children, level + 1) : [];
+
+      return detailRow ? [baseRow, detailRow, ...childRows] : [baseRow, ...childRows];
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -1054,99 +1131,158 @@ export function IncomeManagementView() {
           </div>
         </div>
 
-        <form
-          onSubmit={handleAddCategory}
-          className="mt-6 space-y-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm"
-        >
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
-              Name
-              <input
-                required
-                className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                value={categoryForm.name}
-                onChange={(event) => setCategoryForm((prev) => ({ ...prev, name: event.target.value }))}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
-              Type
-              <select
-                className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                value={categoryForm.type}
-                onChange={(event) =>
-                  setCategoryForm((prev) => ({
-                    ...prev,
-                    type: event.target.value as Category['type'],
-                    parentId: ''
-                  }))
-                }
-              >
-                {categoryTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </option>
-                ))}
-              </select>
-            </label>
+        <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h4 className="text-sm font-semibold text-slate-200">Stage new categories</h4>
+              <p className="text-xs text-slate-500">
+                Draft multiple categories and publish them together to keep hierarchies tidy.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => (isCreatePanelOpen ? closeCreatePanel() : openCreatePanel())}
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-sky-300"
+            >
+              {isCreatePanelOpen ? 'Hide creator' : 'Create category'}
+            </button>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
-              Parent (same root type)
-              <select
-                className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                value={categoryForm.parentId}
-                onChange={(event) => setCategoryForm((prev) => ({ ...prev, parentId: event.target.value }))}
-              >
-                <option value="">No parent</option>
-                {parentOptions.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
-              Tags
-              <input
-                className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                value={categoryForm.tags}
-                onChange={(event) => setCategoryForm((prev) => ({ ...prev, tags: event.target.value }))}
-                placeholder="e.g. bill, essentials"
-              />
-            </label>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
-              Monthly budget (₹)
-              <input
-                type="number"
-                min={0}
-                className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                value={categoryForm.monthlyBudget}
-                onChange={(event) => setCategoryForm((prev) => ({ ...prev, monthlyBudget: event.target.value }))}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
-              Yearly budget (₹)
-              <input
-                type="number"
-                min={0}
-                className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                value={categoryForm.yearlyBudget}
-                onChange={(event) => setCategoryForm((prev) => ({ ...prev, yearlyBudget: event.target.value }))}
-              />
-            </label>
-          </div>
-          <div className="flex flex-col gap-2 text-xs text-slate-400">
-            <p>Use lowercase tags to flag categories, e.g. <code>bill</code> for payment reminders.</p>
-          </div>
-          <button
-            type="submit"
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-sky-300"
-          >
-            Create category
-          </button>
-        </form>
+
+          {isCreatePanelOpen && (
+            <form onSubmit={handleCreateCategories} className="mt-4 space-y-4">
+              {categoryDrafts.length === 0 && (
+                <p className="rounded-lg border border-dashed border-slate-700 bg-slate-950/60 px-4 py-3 text-xs text-slate-400">
+                  Add at least one category draft to begin.
+                </p>
+              )}
+              {categoryDrafts.map((draft, index) => {
+                const parentOptions = categories.filter((category) => category.type === draft.type);
+                return (
+                  <fieldset
+                    key={draft.id}
+                    className="space-y-4 rounded-lg border border-slate-800 bg-slate-950/60 p-4"
+                  >
+                    <legend className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
+                      <span>Category {index + 1}</span>
+                      {categoryDrafts.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeDraftRow(draft.id)}
+                          className="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-semibold"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </legend>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
+                        Name
+                        <input
+                          required
+                          className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                          value={draft.name}
+                          onChange={(event) => updateDraft(draft.id, 'name', event.target.value)}
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
+                        Type
+                        <select
+                          className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                          value={draft.type}
+                          onChange={(event) => {
+                            updateDraft(draft.id, 'type', event.target.value as Category['type']);
+                            updateDraft(draft.id, 'parentId', '');
+                          }}
+                        >
+                          {categoryTypes.map((type) => (
+                            <option key={type} value={type}>
+                              {type.charAt(0).toUpperCase() + type.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
+                        Parent (same root type)
+                        <select
+                          className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                          value={draft.parentId}
+                          onChange={(event) => updateDraft(draft.id, 'parentId', event.target.value)}
+                        >
+                          <option value="">No parent</option>
+                          {parentOptions.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              {category.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
+                        Tags
+                        <input
+                          className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                          value={draft.tags}
+                          onChange={(event) => updateDraft(draft.id, 'tags', event.target.value)}
+                          placeholder="e.g. bill, essentials"
+                        />
+                      </label>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
+                        Monthly budget (₹)
+                        <input
+                          type="number"
+                          min={0}
+                          className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                          value={draft.monthlyBudget}
+                          onChange={(event) => updateDraft(draft.id, 'monthlyBudget', event.target.value)}
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs uppercase text-slate-500">
+                        Yearly budget (₹)
+                        <input
+                          type="number"
+                          min={0}
+                          className="mt-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                          value={draft.yearlyBudget}
+                          onChange={(event) => updateDraft(draft.id, 'yearlyBudget', event.target.value)}
+                        />
+                      </label>
+                    </div>
+                  </fieldset>
+                );
+              })}
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={addDraftRow}
+                  className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold"
+                >
+                  Add another category
+                </button>
+                <span className="text-[11px] text-slate-500">
+                  Use lowercase tags to flag categories, e.g. <code>bill</code> for reminders.
+                </span>
+                <div className="grow" />
+                <button
+                  type="button"
+                  onClick={closeCreatePanel}
+                  className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-slate-900 hover:bg-sky-300"
+                >
+                  Create {categoryDrafts.length > 1 ? 'categories' : 'category'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
 
         <div className="mt-6 flex flex-wrap items-center gap-3 text-xs">
           <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-1">
@@ -1204,7 +1340,23 @@ export function IncomeManagementView() {
                 {type.toUpperCase()} CATEGORIES
               </h4>
               {nodes.length > 0 ? (
-                renderCategoryNodes(nodes)
+                <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/40">
+                  <table className="min-w-full divide-y divide-slate-800 text-sm">
+                    <thead className="bg-slate-900/70 text-xs uppercase tracking-wide text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Category</th>
+                        <th className="px-4 py-3 text-left">Baseline</th>
+                        <th className="px-4 py-3 text-left">Planned</th>
+                        <th className="px-4 py-3 text-left">Actual spend</th>
+                        <th className="px-4 py-3 text-left">Income</th>
+                        <th className="px-4 py-3 text-left">Variance</th>
+                        <th className="px-4 py-3 text-left">Tags</th>
+                        <th className="px-4 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">{renderCategoryRows(nodes)}</tbody>
+                  </table>
+                </div>
               ) : (
                 <p className="text-xs text-slate-500">No categories defined for this type yet.</p>
               )}
