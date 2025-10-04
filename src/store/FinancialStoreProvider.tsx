@@ -241,7 +241,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
   };
 
   const logExportEvent = async (
-    event: Omit<ExportEvent, 'id' | 'createdAt' | 'updatedAt'>
+    event: Pick<ExportEvent, 'format' | 'context' | 'trigger'>
   ) => {
     const now = new Date().toISOString();
     await persistAndSet((snapshot) => ({
@@ -600,13 +600,13 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
 
   const exportData: FinancialStoreActions['exportData'] = async () => {
     const blob = await exportSnapshot();
-    await logExportEvent({ trigger: 'manual', medium: 'file', format: 'json' });
+    await logExportEvent({ trigger: 'manual', format: 'json' });
     return blob;
   };
 
   const exportDataAsCsvAction: FinancialStoreActions['exportDataAsCsv'] = async () => {
     const blob = await exportSnapshotAsCsv();
-    await logExportEvent({ trigger: 'manual', medium: 'file', format: 'csv' });
+    await logExportEvent({ trigger: 'manual', format: 'csv' });
     return blob;
   };
 
