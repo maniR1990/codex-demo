@@ -5,6 +5,9 @@ import App from './App';
 import './styles/index.css';
 import { FinancialStoreProvider } from './store/FinancialStoreProvider';
 import { registerServiceWorker } from './serviceWorkerRegistration';
+import { setupWebCrypto } from './utils/setupWebCrypto';
+
+setupWebCrypto();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
