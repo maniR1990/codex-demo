@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { addMonths, format, formatISO, parseISO } from 'date-fns';
+import { format, formatISO, parseISO } from 'date-fns';
 import { useFinancialStore } from '../store/FinancialStoreProvider';
 import type { Category, PlannedExpenseItem, Transaction } from '../types';
 
@@ -21,6 +21,29 @@ function formatMonthLabel(month: string) {
   } catch {
     return month;
   }
+}
+
+function defaultDueDateForPeriod(viewMode: 'monthly' | 'yearly', month: string, year: string) {
+  const today = new Date();
+  if (viewMode === 'monthly') {
+    const [yearPart, monthPart] = month.split('-');
+    const safeYear = Number.parseInt(yearPart, 10);
+    const safeMonth = Number.parseInt(monthPart, 10) - 1;
+    if (Number.isNaN(safeYear) || Number.isNaN(safeMonth)) {
+      return formatISO(today, { representation: 'date' });
+    }
+    const lastDayOfMonth = new Date(safeYear, safeMonth + 1, 0).getDate();
+    const preferredDay = Math.min(today.getDate(), lastDayOfMonth);
+    const defaultDate = new Date(safeYear, safeMonth, preferredDay);
+    return formatISO(defaultDate, { representation: 'date' });
+  }
+
+  const safeYear = Number.parseInt(year, 10);
+  if (Number.isNaN(safeYear)) {
+    return formatISO(today, { representation: 'date' });
+  }
+  const defaultDate = new Date(safeYear, today.getMonth(), today.getDate());
+  return formatISO(defaultDate, { representation: 'date' });
 }
 
 export function SmartBudgetingView() {
@@ -667,7 +690,7 @@ export function SmartBudgetingView() {
     setExpandedCategories((previous) => ({ ...previous, [id]: !previous[id] }));
   };
 
-  const focusCategory = (id: string, expandSelf = false) => {
+  function focusCategory(id: string, expandSelf = false) {
     setFocusedCategoryId(id);
     setExpandedCategories((previous) => {
       const next = { ...previous } as Record<string, boolean>;
@@ -681,7 +704,7 @@ export function SmartBudgetingView() {
       }
       return next;
     });
-  };
+  }
 
   const handleStartEdit = (detail: PlannedExpenseDetail) => {
     setEditingItemId(detail.item.id);
@@ -1034,6 +1057,26 @@ export function SmartBudgetingView() {
     const directItems = itemsByCategory.get(category.id) ?? [];
     const categoryStatus: PlannedExpenseSpendingHealth =
       summary.actual === 0 ? 'not-spent' : summary.variance >= 0 ? 'under' : 'over';
+    const statusToken = spendingBadgeStyles[categoryStatus];
+    const descendantIds = expenseDescendantsMap.get(category.id) ?? new Set<string>([category.id]);
+    const remainderClass = summary.variance >= 0 ? 'text-success' : 'text-danger';
+    const remainderLabel = summary.variance >= 0 ? 'Remaining' : 'Overspent';
+    const remainderDescriptor = summary.actual === 0 ? 'Awaiting spend' : remainderLabel;
+    const nextDueDetail = plannedExpenseDetails.reduce<PlannedExpenseDetail | null>((closest, detail) => {
+      if (!descendantIds.has(detail.item.categoryId)) {
+        return closest;
+      }
+      if (!closest) return detail;
+      const currentTime = new Date(detail.item.dueDate).getTime();
+      const closestTime = new Date(closest.item.dueDate).getTime();
+      return currentTime < closestTime ? detail : closest;
+    }, null);
+    const nextDueLabel = nextDueDetail
+      ? new Date(nextDueDetail.item.dueDate).toLocaleDateString('en-IN', {
+          month: 'short',
+          day: 'numeric'
+        })
+      : null;
     const matchesCategorySearch =
       normalisedSearchTerm !== '' && category.name.toLowerCase().includes(normalisedSearchTerm);
     const visibleDirectItems = directItems.filter((detail) => {
@@ -1079,7 +1122,7 @@ export function SmartBudgetingView() {
     return (
       <div key={category.id} className={`border-t border-slate-800 ${dimClass}`}>
         <div
-          className={`grid grid-cols-[minmax(0,3fr)_minmax(140px,1fr)_minmax(120px,0.8fr)] items-center gap-4 px-4 py-3 text-sm transition hover:bg-slate-900/50 ${focusClass}`}
+          className={`grid grid-cols-[minmax(0,3fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(140px,0.8fr)] items-center gap-4 px-4 py-3 text-sm transition hover:bg-slate-900/50 ${focusClass}`}
         >
           <div className="flex items-center gap-3" style={{ paddingLeft: indentation }}>
             <button
@@ -1095,15 +1138,28 @@ export function SmartBudgetingView() {
                 {canExpand ? '▸' : '•'}
               </span>
             </button>
-            <div>
-              <p className="text-sm font-semibold text-slate-100">{category.name}</p>
+            <div className="flex flex-col gap-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold text-slate-100">{category.name}</p>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusToken.badgeClass}`}>
+                  {statusToken.label}
+                </span>
+              </div>
               <p className="text-[11px] text-slate-500">
                 {summary.itemCount} planned item{summary.itemCount === 1 ? '' : 's'}
+                {nextDueLabel ? ` • Next due ${nextDueLabel}` : ''}
               </p>
             </div>
           </div>
           <div className="text-right text-sm font-semibold text-warning">
             {formatCurrency(summary.planned)}
+          </div>
+          <div className="text-right text-sm font-semibold text-slate-200">
+            {formatCurrency(summary.actual)}
+          </div>
+          <div className={`text-right text-sm font-semibold ${remainderClass}`}>
+            <div>{formatCurrency(summary.variance)}</div>
+            <span className="block text-[10px] font-semibold text-slate-400">{remainderDescriptor}</span>
           </div>
           <div className="flex justify-end text-[11px]">
             {isFocused ? (
@@ -1513,6 +1569,26 @@ export function SmartBudgetingView() {
               <p className="text-[11px] uppercase tracking-wide text-slate-500">Total planned</p>
               <p className="text-lg font-semibold text-warning">{formatCurrency(overallSummary.planned)}</p>
             </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-3 text-left">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">Spent</p>
+              <p className="text-lg font-semibold text-slate-200">{formatCurrency(overallSummary.actual)}</p>
+            </div>
+            <div
+              className={`rounded-xl border px-4 py-3 text-left ${
+                overallSummary.variance >= 0
+                  ? 'border-success/40 bg-success/10'
+                  : 'border-danger/40 bg-danger/10'
+              }`}
+            >
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">Balance</p>
+              <p
+                className={`text-lg font-semibold ${
+                  overallSummary.variance >= 0 ? 'text-success' : 'text-danger'
+                }`}
+              >
+                {formatCurrency(overallSummary.variance)}
+              </p>
+            </div>
             <span
               className={`rounded-full px-2 py-0.5 font-semibold uppercase tracking-wide ${
                 spendingBadgeStyles[overallSummary.status].badgeClass
@@ -1606,9 +1682,11 @@ export function SmartBudgetingView() {
           <div className="space-y-4">
             {renderedCategorySections.length > 0 && (
               <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/70">
-                <div className="grid grid-cols-[minmax(0,3fr)_minmax(140px,1fr)_minmax(120px,0.8fr)] items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                <div className="grid grid-cols-[minmax(0,3fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(140px,0.8fr)] items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                   <span>Category</span>
                   <span className="text-right">Planned</span>
+                  <span className="text-right">Spent</span>
+                  <span className="text-right">Remainder</span>
                   <span className="text-right">Actions</span>
                 </div>
                 <div>{renderedCategorySections}</div>
