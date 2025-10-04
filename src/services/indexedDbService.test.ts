@@ -14,8 +14,8 @@ const baseSnapshot: FinancialSnapshot = {
       name: 'Checking',
       balance: 50000,
       type: 'bank',
-      institution: 'Sample Bank',
-      lastUpdated: new Date().toISOString(),
+      currency: 'INR',
+      institutionId: 'sample-bank',
       isManual: true
     }
   ],
@@ -28,10 +28,19 @@ const baseSnapshot: FinancialSnapshot = {
       id: 'txn-1',
       accountId: 'acct-1',
       amount: 50000,
+      currency: 'INR',
       date: new Date().toISOString(),
       description: 'Monthly salary',
+      categoryId: 'cat-1'
+    }
+  ],
+  monthlyIncomes: [
+    {
+      id: 'custom-income-1',
+      source: 'Salary',
+      amount: 50000,
       categoryId: 'cat-1',
-      isAiCategorised: true
+      receivedOn: new Date().toISOString()
     }
   ],
   plannedExpenses: [],
@@ -58,7 +67,7 @@ describe('indexedDbService encryption', () => {
   it('stores encrypted payloads in the snapshot store', async () => {
     await persistSnapshot(baseSnapshot);
 
-    const db = await openDB(DB_NAME, 2);
+    const db = await openDB(DB_NAME, 3);
     const record = await db.get('snapshots', 'singleton');
 
     expect(record?.payload).toBeDefined();
@@ -69,18 +78,22 @@ describe('indexedDbService encryption', () => {
   });
 
   it('migrates legacy stores into an encrypted snapshot and clears plain text', async () => {
-    const db = await openDB(DB_NAME, 2);
+    const db = await openDB(DB_NAME, 3);
     await db.put('accounts', baseSnapshot.accounts[0]);
     await db.put('categories', baseSnapshot.categories[0]);
     await db.put('transactions', baseSnapshot.transactions[0]);
+    await db.put('monthlyIncomes', baseSnapshot.monthlyIncomes[0]);
     await db.put('wealthMetrics', { id: 'singleton', ...baseSnapshot.wealthMetrics });
 
     const snapshot = await loadSnapshot();
     expect(snapshot?.accounts).toHaveLength(1);
     expect(snapshot?.accounts[0].name).toBe('Checking');
+    expect(snapshot?.monthlyIncomes).toHaveLength(1);
 
     const legacyAccounts = await db.getAll('accounts');
     expect(legacyAccounts).toHaveLength(0);
+    const legacyIncomes = await db.getAll('monthlyIncomes');
+    expect(legacyIncomes).toHaveLength(0);
 
     const encryptedRecord = await db.get('snapshots', 'singleton');
     expect(encryptedRecord?.payload ?? '').not.toContain('Sample Bank');

@@ -6,7 +6,8 @@ import type {
   Insight,
   PlannedExpenseItem,
   RecurringExpense,
-  Transaction
+  Transaction,
+  MonthlyIncome
 } from '../types';
 
 interface InsightInput {
@@ -16,14 +17,17 @@ interface InsightInput {
   plannedExpenses: PlannedExpenseItem[];
   goals: Goal[];
   categories: Category[];
+  monthlyIncomes: MonthlyIncome[];
 }
 
 export function generateInsights(input: InsightInput): Insight[] {
   const insights: Insight[] = [];
 
-  const totalIncome = input.transactions
+  const totalIncomeFromTransactions = input.transactions
     .filter((txn) => txn.amount > 0)
     .reduce((sum, txn) => sum + txn.amount, 0);
+  const recurringIncome = input.monthlyIncomes.reduce((sum, income) => sum + income.amount, 0);
+  const totalIncome = totalIncomeFromTransactions + recurringIncome;
   const totalExpenses = input.transactions
     .filter((txn) => txn.amount < 0)
     .reduce((sum, txn) => sum + Math.abs(txn.amount), 0);
@@ -85,6 +89,16 @@ export function generateInsights(input: InsightInput): Insight[] {
       title: 'Custom expense categories in use',
       description: `You are tracking ${customExpenseCategories.length} custom expense categories. Continue refining to improve AI recommendations.`,
       severity: 'info'
+    });
+  }
+
+  const uncoveredIncome = input.monthlyIncomes.filter((income) => !income.categoryId);
+  if (uncoveredIncome.length > 0) {
+    insights.push({
+      id: 'insight-income-categorisation',
+      title: 'Categorise income streams',
+      description: `${uncoveredIncome.length} income entries are uncategorised. Tag them to align tax planning and savings goals.`,
+      severity: 'warning'
     });
   }
 

@@ -1,21 +1,25 @@
-import type { Account, Goal, RecurringExpense, Transaction, WealthAcceleratorMetrics } from '../types';
+import type { Account, Goal, MonthlyIncome, RecurringExpense, Transaction, WealthAcceleratorMetrics } from '../types';
 import { differenceInMonths, parseISO } from 'date-fns';
 
 export function simulateWealthAccelerator(
   accounts: Account[],
   transactions: Transaction[],
   goals: Goal[],
-  recurringExpenses: RecurringExpense[]
+  recurringExpenses: RecurringExpense[],
+  monthlyIncomes: MonthlyIncome[]
 ): WealthAcceleratorMetrics {
   const investableAssets = accounts
     .filter((acct) => acct.type === 'investment' || acct.type === 'bank')
     .reduce((sum, acct) => sum + acct.balance, 0);
   const liabilities = accounts.filter((acct) => acct.type === 'loan').reduce((sum, acct) => sum + acct.balance, 0);
 
-  const monthlySavings = transactions
+  const transactionIncome = transactions
     .filter((txn) => txn.amount > 0)
-    .reduce((sum, txn) => sum + txn.amount, 0) +
-    transactions.filter((txn) => txn.amount < 0).reduce((sum, txn) => sum + txn.amount, 0);
+    .reduce((sum, txn) => sum + txn.amount, 0);
+  const recurringIncome = monthlyIncomes.reduce((sum, income) => sum + income.amount, 0);
+  const totalIncome = transactionIncome + recurringIncome;
+  const totalExpenses = transactions.filter((txn) => txn.amount < 0).reduce((sum, txn) => sum + Math.abs(txn.amount), 0);
+  const monthlySavings = totalIncome - totalExpenses;
 
   const cashFlowHealth = Math.max(0, Math.min(100, (monthlySavings / Math.max(1, liabilities)) * 100));
   const capitalEfficiencyScore = Math.round(

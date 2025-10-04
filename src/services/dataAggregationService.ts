@@ -9,7 +9,8 @@ import type {
   Transaction,
   WealthAcceleratorMetrics,
   Insight,
-  Goal
+  Goal,
+  MonthlyIncome
 } from '../types';
 import { persistSnapshot } from './indexedDbService';
 import { generateInsights } from './insightsEngine';
@@ -20,6 +21,7 @@ interface AggregationOptions {
   manualAccounts?: Account[];
   manualTransactions?: Transaction[];
   manualCategories?: Category[];
+  manualMonthlyIncomes?: MonthlyIncome[];
 }
 
 export class DataAggregationService {
@@ -41,14 +43,27 @@ export class DataAggregationService {
     const plannedExpenses = this.generatePlannedExpenses(categories);
     const recurringExpenses = this.generateRecurringExpenses(categories);
     const goals = this.generateGoals(categories);
+    const monthlyIncomes = this.mergeMonthlyIncomes(
+      this.generateMonthlyIncomes(categories),
+      options.manualMonthlyIncomes ?? []
+    );
 
-    const wealthMetrics = simulateWealthAccelerator(accounts, transactions, goals, recurringExpenses);
-    const insights = generateInsights({ accounts, transactions, recurringExpenses, plannedExpenses, goals, categories });
+    const wealthMetrics = simulateWealthAccelerator(accounts, transactions, goals, recurringExpenses, monthlyIncomes);
+    const insights = generateInsights({
+      accounts,
+      transactions,
+      recurringExpenses,
+      plannedExpenses,
+      goals,
+      categories,
+      monthlyIncomes
+    });
 
     const snapshot: FinancialSnapshot = {
       accounts,
       categories,
       transactions,
+      monthlyIncomes,
       plannedExpenses,
       recurringExpenses,
       goals,
@@ -127,6 +142,14 @@ export class DataAggregationService {
     return Array.from(map.values());
   }
 
+  private mergeMonthlyIncomes(base: MonthlyIncome[], manual: MonthlyIncome[]): MonthlyIncome[] {
+    const map = new Map(base.map((income) => [income.id, income]));
+    for (const income of manual) {
+      map.set(income.id, income);
+    }
+    return Array.from(map.values());
+  }
+
   private categorizeTransactions(transactions: Transaction[], categories: Category[]): Transaction[] {
     return transactions.map((transaction) => {
       if (transaction.categoryId) return transaction;
@@ -177,6 +200,20 @@ export class DataAggregationService {
         currency: 'INR',
         isEstimated: false,
         nextDueDate: new Date().toISOString()
+      }
+    ];
+  }
+
+  private generateMonthlyIncomes(categories: Category[]): MonthlyIncome[] {
+    const salaryCategory = categories.find((cat) => cat.type === 'income');
+    return [
+      {
+        id: uuid(),
+        source: 'Salary - Apex Manufacturing',
+        amount: 185000,
+        categoryId: salaryCategory?.id ?? categories[0].id,
+        receivedOn: new Date().toISOString(),
+        notes: 'Credited via payroll'
       }
     ];
   }

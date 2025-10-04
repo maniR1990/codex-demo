@@ -4,6 +4,7 @@ import { DashboardView } from './views/DashboardView';
 import { BalanceSheetView } from './views/BalanceSheetView';
 import { TrendAnalysisView } from './views/TrendAnalysisView';
 import { SmartBudgetingView } from './views/SmartBudgetingView';
+import { IncomeManagementView } from './views/IncomeManagementView';
 import { RecurringExpensesView } from './views/RecurringExpensesView';
 import { GoalSimulatorView } from './views/GoalSimulatorView';
 import { InsightsView } from './views/InsightsView';
@@ -69,6 +70,9 @@ export default function App() {
           <NavLink to="/budgeting" className={navLinkClass}>
             Smart Budgeting
           </NavLink>
+          <NavLink to="/income" className={navLinkClass}>
+            Income & Categories
+          </NavLink>
           <NavLink to="/recurring" className={navLinkClass}>
             Recurring Expenses Hub
           </NavLink>
@@ -88,6 +92,7 @@ export default function App() {
             <Route path="/balance" element={<BalanceSheetView />} />
             <Route path="/trends" element={<TrendAnalysisView />} />
             <Route path="/budgeting" element={<SmartBudgetingView />} />
+            <Route path="/income" element={<IncomeManagementView />} />
             <Route path="/recurring" element={<RecurringExpensesView />} />
             <Route path="/goals" element={<GoalSimulatorView />} />
             <Route path="/insights" element={<InsightsView />} />

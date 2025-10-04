@@ -63,6 +63,15 @@ export interface RecurringExpense {
   nextDueDate?: string;
 }
 
+export interface MonthlyIncome {
+  id: string;
+  source: string;
+  amount: number;
+  categoryId: string;
+  receivedOn: string;
+  notes?: string;
+}
+
 export interface Goal {
   id: string;
   name: string;
@@ -89,6 +98,7 @@ export interface FinancialSnapshot {
   accounts: Account[];
   categories: Category[];
   transactions: Transaction[];
+  monthlyIncomes: MonthlyIncome[];
   plannedExpenses: PlannedExpenseItem[];
   recurringExpenses: RecurringExpense[];
   goals: Goal[];
