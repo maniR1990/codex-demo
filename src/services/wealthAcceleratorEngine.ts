@@ -8,6 +8,7 @@ export function simulateWealthAccelerator(
   recurringExpenses: RecurringExpense[],
   monthlyIncomes: MonthlyIncome[]
 ): WealthAcceleratorMetrics {
+  const now = new Date().toISOString();
   const investableAssets = accounts
     .filter((acct) => acct.type === 'investment' || acct.type === 'bank')
     .reduce((sum, acct) => sum + acct.balance, 0);
@@ -58,6 +59,7 @@ export function simulateWealthAccelerator(
   return {
     capitalEfficiencyScore: Math.min(100, Math.max(0, capitalEfficiencyScore)),
     opportunityCostAlerts,
-    insuranceGapAnalysis
+    insuranceGapAnalysis,
+    updatedAt: now
   };
 }

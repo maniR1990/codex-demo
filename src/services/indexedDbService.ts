@@ -9,32 +9,15 @@ import type {
   PlannedExpenseItem,
   RecurringExpense,
   Transaction,
-  WealthAcceleratorMetrics,
-  FinancialInstitutionConnection
+  WealthAcceleratorMetrics
 } from '../types';
+import { normaliseSnapshot } from '../utils/snapshotMerge';
 
 const DB_NAME = 'wealth-accelerator-db';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const SNAPSHOT_STORE = 'snapshots';
 
-export type StoreName =
-  | 'accounts'
-  | 'categories'
-  | 'transactions'
-  | 'monthlyIncomes'
-  | 'plannedExpenses'
-  | 'recurringExpenses'
-  | 'goals'
-  | 'insights'
-  | 'wealthMetrics'
-  | 'connections';
-
-type SnapshotRecord = {
-  id: 'singleton';
-  payload: string;
-};
-
-const LEGACY_STORES: StoreName[] = [
+const LEGACY_STORES = [
   'accounts',
   'categories',
   'transactions',
@@ -45,7 +28,14 @@ const LEGACY_STORES: StoreName[] = [
   'insights',
   'wealthMetrics',
   'connections'
-];
+] as const;
+
+interface SnapshotRecord {
+  id: 'singleton';
+  payload: string;
+}
+
+type LegacyStoreName = (typeof LEGACY_STORES)[number];
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
 
@@ -53,36 +43,6 @@ async function getDb() {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
       upgrade(database) {
-        if (!database.objectStoreNames.contains('accounts')) {
-          database.createObjectStore('accounts', { keyPath: 'id' });
-        }
-        if (!database.objectStoreNames.contains('categories')) {
-          database.createObjectStore('categories', { keyPath: 'id' });
-        }
-        if (!database.objectStoreNames.contains('transactions')) {
-          database.createObjectStore('transactions', { keyPath: 'id' });
-        }
-        if (!database.objectStoreNames.contains('monthlyIncomes')) {
-          database.createObjectStore('monthlyIncomes', { keyPath: 'id' });
-        }
-        if (!database.objectStoreNames.contains('plannedExpenses')) {
-          database.createObjectStore('plannedExpenses', { keyPath: 'id' });
-        }
-        if (!database.objectStoreNames.contains('recurringExpenses')) {
-          database.createObjectStore('recurringExpenses', { keyPath: 'id' });
-        }
-        if (!database.objectStoreNames.contains('goals')) {
-          database.createObjectStore('goals', { keyPath: 'id' });
-        }
-        if (!database.objectStoreNames.contains('insights')) {
-          database.createObjectStore('insights', { keyPath: 'id' });
-        }
-        if (!database.objectStoreNames.contains('wealthMetrics')) {
-          database.createObjectStore('wealthMetrics', { keyPath: 'id' });
-        }
-        if (!database.objectStoreNames.contains('connections')) {
-          database.createObjectStore('connections', { keyPath: 'id' });
-        }
         if (!database.objectStoreNames.contains(SNAPSHOT_STORE)) {
           database.createObjectStore(SNAPSHOT_STORE, { keyPath: 'id' });
         }
@@ -92,23 +52,22 @@ async function getDb() {
   return dbPromise;
 }
 
-async function getAll<T>(storeName: StoreName): Promise<T[]> {
+async function clearLegacyStores() {
   const db = await getDb();
-  if (!db.objectStoreNames.contains(storeName)) return [];
-  return db.getAll(storeName) as Promise<T[]>;
-}
-
-async function clearStore(storeName: StoreName) {
-  const db = await getDb();
-  if (!db.objectStoreNames.contains(storeName)) return;
-  const tx = db.transaction(storeName, 'readwrite');
-  await tx.store.clear();
-  await tx.done;
+  await Promise.all(
+    LEGACY_STORES.map(async (storeName) => {
+      if (!db.objectStoreNames.contains(storeName)) return;
+      const tx = db.transaction(storeName, 'readwrite');
+      await tx.store.clear();
+      await tx.done;
+    })
+  );
 }
 
 export async function persistSnapshot(snapshot: FinancialSnapshot) {
   const db = await getDb();
-  const encrypted = await encryptData(JSON.stringify(snapshot));
+  const normalised = normaliseSnapshot(snapshot);
+  const encrypted = await encryptData(JSON.stringify(normalised));
   const tx = db.transaction(SNAPSHOT_STORE, 'readwrite');
   const record: SnapshotRecord = { id: 'singleton', payload: encrypted };
   await tx.store.put(record);
@@ -122,20 +81,27 @@ export async function loadSnapshot(): Promise<FinancialSnapshot | null> {
     const record = (await db.get(SNAPSHOT_STORE, 'singleton')) as SnapshotRecord | undefined;
     if (record?.payload) {
       const decrypted = await decryptData(record.payload);
-      return JSON.parse(decrypted) as FinancialSnapshot;
+      return normaliseSnapshot(JSON.parse(decrypted) as Partial<FinancialSnapshot>);
     }
   }
 
   const legacySnapshot = await loadLegacySnapshot();
   if (legacySnapshot) {
-    await persistSnapshot(legacySnapshot);
-    return legacySnapshot;
+    const normalised = normaliseSnapshot(legacySnapshot);
+    await persistSnapshot(normalised);
+    return normalised;
   }
 
   return null;
 }
 
-async function loadLegacySnapshot(): Promise<FinancialSnapshot | null> {
+async function getAll<T>(storeName: LegacyStoreName): Promise<T[]> {
+  const db = await getDb();
+  if (!db.objectStoreNames.contains(storeName)) return [];
+  return (await db.getAll(storeName)) as T[];
+}
+
+async function loadLegacySnapshot(): Promise<Partial<FinancialSnapshot> | null> {
   const [
     accounts,
     categories,
@@ -145,8 +111,7 @@ async function loadLegacySnapshot(): Promise<FinancialSnapshot | null> {
     recurringExpenses,
     goals,
     insights,
-    wealthMetrics,
-    connections
+    wealthMetrics
   ] = await Promise.all([
     getAll<Account>('accounts'),
     getAll<Category>('categories'),
@@ -156,8 +121,7 @@ async function loadLegacySnapshot(): Promise<FinancialSnapshot | null> {
     getAll<RecurringExpense>('recurringExpenses'),
     getAll<Goal>('goals'),
     getAll<Insight>('insights'),
-    getAll<WealthAcceleratorMetrics & { id: string }>('wealthMetrics'),
-    getAll<FinancialInstitutionConnection>('connections')
+    getAll<WealthAcceleratorMetrics & { id: string }>('wealthMetrics')
   ]);
 
   if (
@@ -169,20 +133,14 @@ async function loadLegacySnapshot(): Promise<FinancialSnapshot | null> {
     recurringExpenses.length === 0 &&
     goals.length === 0 &&
     insights.length === 0 &&
-    wealthMetrics.length === 0 &&
-    connections.length === 0
+    wealthMetrics.length === 0
   ) {
     return null;
   }
 
-  const metrics = wealthMetrics[0] ?? {
-    id: 'singleton',
-    capitalEfficiencyScore: 0,
-    opportunityCostAlerts: [],
-    insuranceGapAnalysis: ''
-  };
-
+  const metrics = wealthMetrics[0];
   return {
+    profile: null,
     accounts,
     categories,
     transactions,
@@ -191,35 +149,115 @@ async function loadLegacySnapshot(): Promise<FinancialSnapshot | null> {
     recurringExpenses,
     goals,
     insights,
-    wealthMetrics: {
-      capitalEfficiencyScore: metrics.capitalEfficiencyScore,
-      opportunityCostAlerts: metrics.opportunityCostAlerts,
-      insuranceGapAnalysis: metrics.insuranceGapAnalysis
-    },
-    connections
-};
+    wealthMetrics: metrics
+      ? {
+          capitalEfficiencyScore: metrics.capitalEfficiencyScore,
+          opportunityCostAlerts: metrics.opportunityCostAlerts,
+          insuranceGapAnalysis: metrics.insuranceGapAnalysis,
+          updatedAt: new Date().toISOString()
+        }
+      : undefined,
+    smartExportRules: [],
+    exportHistory: [],
+    revision: 0,
+    lastLocalChangeAt: new Date().toISOString()
+  } satisfies Partial<FinancialSnapshot>;
 }
 
 export async function exportSnapshot(): Promise<Blob> {
   const snapshot = await loadSnapshot();
-  const payload = snapshot ?? {
-    accounts: [],
-    categories: [],
-    transactions: [],
-    monthlyIncomes: [],
-    plannedExpenses: [],
-    recurringExpenses: [],
-    goals: [],
-    insights: [],
-    wealthMetrics: {
-      capitalEfficiencyScore: 0,
-      opportunityCostAlerts: [],
-      insuranceGapAnalysis: ''
-    },
-    connections: []
-  };
+  const payload = normaliseSnapshot(snapshot ?? null);
   const encrypted = await encryptData(JSON.stringify(payload));
   return new Blob([encrypted], { type: 'application/json' });
+}
+
+export async function exportSnapshotAsCsv(): Promise<Blob> {
+  const snapshot = normaliseSnapshot(await loadSnapshot());
+  const baseCurrency = snapshot.profile?.currency ?? 'INR';
+
+  const rows: string[] = [];
+  const pushRow = (columns: Array<string | number | undefined>) => {
+    const normalisedColumns = columns.map((value) => {
+      if (value === undefined || value === null) return '';
+      const str = String(value).replace(/"/g, '""');
+      return `"${str}` + '"';
+    });
+    rows.push(normalisedColumns.join(','));
+  };
+
+  pushRow(['section', 'id', 'name', 'type', 'amount', 'currency', 'date', 'metadata']);
+  pushRow([
+    'profile',
+    'profile',
+    snapshot.profile ? snapshot.profile.financialStartDate : 'not-initialised',
+    snapshot.profile ? snapshot.profile.currency : '',
+    '',
+    snapshot.profile ? snapshot.profile.currency : '',
+    snapshot.profile ? snapshot.profile.updatedAt : '',
+    snapshot.profile?.openingBalanceNote
+  ]);
+  snapshot.accounts.forEach((account) => {
+    pushRow([
+      'account',
+      account.id,
+      account.name,
+      account.type,
+      account.balance,
+      account.currency,
+      account.updatedAt,
+      account.notes
+    ]);
+  });
+  snapshot.transactions.forEach((transaction) => {
+    pushRow([
+      'transaction',
+      transaction.id,
+      transaction.description,
+      transaction.categoryId ?? 'uncategorised',
+      transaction.amount,
+      transaction.currency,
+      transaction.date,
+      transaction.accountId
+    ]);
+  });
+  snapshot.monthlyIncomes.forEach((income) => {
+    pushRow([
+      'monthly-income',
+      income.id,
+      income.source,
+      income.categoryId,
+      income.amount,
+      baseCurrency,
+      income.receivedOn,
+      income.notes
+    ]);
+  });
+  snapshot.recurringExpenses.forEach((expense) => {
+    pushRow([
+      'recurring-expense',
+      expense.id,
+      expense.name,
+      expense.categoryId,
+      expense.amount,
+      expense.currency,
+      expense.dueDate,
+      expense.frequency
+    ]);
+  });
+  snapshot.goals.forEach((goal) => {
+    pushRow([
+      'goal',
+      goal.id,
+      goal.name,
+      goal.categoryId,
+      goal.targetAmount,
+      baseCurrency,
+      goal.targetDate,
+      goal.currentAmount
+    ]);
+  });
+
+  return new Blob([rows.join('\n')], { type: 'text/csv' });
 }
 
 const ENCRYPTION_KEY = 'wealth-accelerator-local-key';
@@ -235,7 +273,7 @@ async function getCryptoKey() {
   );
 }
 
-async function encryptData(data: string) {
+export async function encryptData(data: string) {
   const key = await getCryptoKey();
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoded = new TextEncoder().encode(data);
@@ -258,11 +296,7 @@ export async function decryptData(payload: string) {
 export async function importSnapshot(blob: Blob) {
   const text = await blob.text();
   const decrypted = await decryptData(text);
-  const snapshot = JSON.parse(decrypted) as FinancialSnapshot;
+  const snapshot = normaliseSnapshot(JSON.parse(decrypted) as Partial<FinancialSnapshot>);
   await persistSnapshot(snapshot);
   return snapshot;
-}
-
-async function clearLegacyStores() {
-  await Promise.all(LEGACY_STORES.map((store) => clearStore(store)));
 }
