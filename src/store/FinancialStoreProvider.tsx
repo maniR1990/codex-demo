@@ -640,10 +640,30 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       createdAt: now,
       updatedAt: now
     };
-    await persistAndSet((snapshot) => ({
-      ...snapshot,
-      transactions: [...snapshot.transactions, transaction]
-    }));
+    let accountUpdated = false;
+    await persistAndSet((snapshot) => {
+      const account = snapshot.accounts.find((item) => item.id === transaction.accountId);
+      if (!account) {
+        return snapshot;
+      }
+      accountUpdated = true;
+      return {
+        ...snapshot,
+        accounts: snapshot.accounts.map((item) =>
+          item.id === transaction.accountId
+            ? {
+                ...item,
+                balance: item.balance + transaction.amount,
+                updatedAt: now
+              }
+            : item
+        ),
+        transactions: [...snapshot.transactions, transaction]
+      };
+    });
+    if (!accountUpdated) {
+      throw new Error('Unable to record spend: the selected account no longer exists.');
+    }
     return transaction;
   };
 
