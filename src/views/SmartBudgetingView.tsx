@@ -917,7 +917,7 @@ export function SmartBudgetingView() {
     const varianceLabel = summary.variance >= 0 ? 'Saved' : 'Overspent';
     const varianceDisplay = Math.abs(summary.variance);
     const matchesCategorySearch =
-      normalisedSearchTerm === '' || category.name.toLowerCase().includes(normalisedSearchTerm);
+      normalisedSearchTerm !== '' && category.name.toLowerCase().includes(normalisedSearchTerm);
     const visibleDirectItems = directItems.filter((detail) => {
       const matchesStatus = navigatorFilter === 'all' || detail.status === navigatorFilter;
       const matchesName =
