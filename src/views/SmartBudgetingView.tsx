@@ -48,19 +48,46 @@ export function SmartBudgetingView() {
   const [selectedYear, setSelectedYear] = useState(defaultYear);
   const [selectedCategoryId, setSelectedCategoryId] = useState<'all' | string>('all');
 
-  const [formState, setFormState] = useState({
+  type PlannedExpenseDraft = {
+    id: string;
+    name: string;
+    amount: string;
+    dueDate: string;
+    categoryId: string;
+  };
+
+  const generateEntryId = () => Math.random().toString(36).slice(2);
+
+  const createEmptyEntry = (categoryId?: string): PlannedExpenseDraft => ({
+    id: generateEntryId(),
     name: '',
-    amount: 0,
+    amount: '',
     dueDate: formatISO(addMonths(new Date(), 1), { representation: 'date' }),
-    categoryId: expenseCategories[0]?.id ?? ''
+    categoryId: categoryId ?? expenseCategories[0]?.id ?? ''
   });
-  useEffect(() => {
-    if (!expenseCategories.some((category) => category.id === formState.categoryId) && expenseCategories[0]) {
-      setFormState((prev) => ({ ...prev, categoryId: expenseCategories[0].id }));
-    }
-  }, [expenseCategories, formState.categoryId]);
-  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+
+  const [plannedEntries, setPlannedEntries] = useState<PlannedExpenseDraft[]>(() => [createEmptyEntry()]);
+  const [isAddExpenseDialogOpen, setIsAddExpenseDialogOpen] = useState(false);
+  const [isSubmittingPlannedExpenses, setIsSubmittingPlannedExpenses] = useState(false);
+  const [categoryCreationTargetId, setCategoryCreationTargetId] = useState<string | null>(null);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+
+  useEffect(() => {
+    if (expenseCategories.length === 0) {
+      setPlannedEntries((previous) =>
+        previous.map((entry) => ({ ...entry, categoryId: '' }))
+      );
+      return;
+    }
+    setPlannedEntries((previous) =>
+      previous.map((entry) =>
+        expenseCategories.some((category) => category.id === entry.categoryId)
+          ? entry
+          : { ...entry, categoryId: expenseCategories[0].id }
+      )
+    );
+  }, [expenseCategories]);
 
   const categoryLookup = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const categoryParentMap = useMemo(() => {
@@ -149,18 +176,6 @@ export function SmartBudgetingView() {
       ),
     [transactions, viewMode, selectedMonth, selectedYear]
   );
-
-  const categorySuggestions = useMemo(() => {
-    const spendByCategory = new Map<string, number>();
-    periodTransactions.forEach((txn) => {
-      if (txn.categoryId) {
-        spendByCategory.set(txn.categoryId, (spendByCategory.get(txn.categoryId) ?? 0) + Math.abs(txn.amount));
-      }
-    });
-    return [...expenseCategories]
-      .sort((a, b) => (spendByCategory.get(b.id) ?? 0) - (spendByCategory.get(a.id) ?? 0))
-      .slice(0, 5);
-  }, [expenseCategories, periodTransactions]);
 
   const resolveCategoryIds = (categoryId: 'all' | string) => {
     if (categoryId === 'all') return allExpenseIdsSet;
@@ -518,29 +533,115 @@ export function SmartBudgetingView() {
     }
   };
 
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    await addPlannedExpense({
-      name: formState.name,
-      plannedAmount: Number(formState.amount),
-      categoryId: formState.categoryId,
-      dueDate: formState.dueDate,
-      status: 'pending'
+  const resetPlannedEntries = () => setPlannedEntries([createEmptyEntry()]);
+
+  const isEntryValid = (entry: PlannedExpenseDraft) => {
+    if (!entry.name.trim()) return false;
+    if (entry.amount.trim() === '') return false;
+    const numericAmount = Number(entry.amount);
+    if (Number.isNaN(numericAmount) || numericAmount < 0) return false;
+    if (!entry.dueDate) return false;
+    if (!entry.categoryId) return false;
+    return true;
+  };
+
+  const handleEntryChange = (id: string, patch: Partial<PlannedExpenseDraft>) => {
+    setPlannedEntries((previous) => previous.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)));
+  };
+
+  const handleAddEntryRow = () => {
+    setPlannedEntries((previous) => [...previous, createEmptyEntry()]);
+  };
+
+  const handleRemoveEntryRow = (id: string) => {
+    setPlannedEntries((previous) => {
+      if (previous.length <= 1) {
+        return [createEmptyEntry()];
+      }
+      return previous.filter((entry) => entry.id !== id);
     });
-    setFormState((prev) => ({ ...prev, name: '', amount: 0 }));
+    setCategoryCreationTargetId((previous) => (previous === id ? null : previous));
+  };
+
+  const handleToggleCategoryCreation = (id: string) => {
+    setCategoryCreationTargetId((previous) => {
+      const next = previous === id ? null : id;
+      setNewCategoryName('');
+      return next;
+    });
+  };
+
+  const handleSubmitPlannedExpenses = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setHasAttemptedSubmit(true);
+    if (expenseCategories.length === 0) {
+      return;
+    }
+    const hasInvalidEntries = plannedEntries.some((entry) => !isEntryValid(entry));
+    if (hasInvalidEntries) {
+      return;
+    }
+    setIsSubmittingPlannedExpenses(true);
+    try {
+      for (const entry of plannedEntries) {
+        await addPlannedExpense({
+          name: entry.name.trim(),
+          plannedAmount: Number(entry.amount),
+          categoryId: entry.categoryId,
+          dueDate: entry.dueDate,
+          status: 'pending'
+        });
+      }
+      resetPlannedEntries();
+      setCategoryCreationTargetId(null);
+      setNewCategoryName('');
+      setHasAttemptedSubmit(false);
+      setIsAddExpenseDialogOpen(false);
+    } finally {
+      setIsSubmittingPlannedExpenses(false);
+    }
+  };
+
+  const handleOpenDialog = () => {
+    if (plannedEntries.length === 0) {
+      resetPlannedEntries();
+    }
+    setHasAttemptedSubmit(false);
+    setCategoryCreationTargetId(null);
+    setNewCategoryName('');
+    setIsAddExpenseDialogOpen(true);
+  };
+
+  const handleCancelDialog = () => {
+    setIsAddExpenseDialogOpen(false);
+    setCategoryCreationTargetId(null);
+    setNewCategoryName('');
+    setHasAttemptedSubmit(false);
+    resetPlannedEntries();
   };
 
   const handleCreateCategory = async () => {
     if (!newCategoryName.trim()) return;
     const category = await addCategory({
-      name: newCategoryName,
+      name: newCategoryName.trim(),
       type: 'expense',
       isCustom: true
     });
-    setFormState((prev) => ({ ...prev, categoryId: category.id }));
+    setPlannedEntries((previous) =>
+      previous.map((entry) =>
+        categoryCreationTargetId && entry.id === categoryCreationTargetId
+          ? { ...entry, categoryId: category.id }
+          : entry
+      )
+    );
     setNewCategoryName('');
-    setIsCreatingCategory(false);
+    setCategoryCreationTargetId(null);
   };
+
+  const hasInvalidEntries = plannedEntries.some((entry) => !isEntryValid(entry));
+  const shouldShowValidationError =
+    hasAttemptedSubmit && (hasInvalidEntries || expenseCategories.length === 0);
+  const canRemoveRows = plannedEntries.length > 1;
 
   const toggleCategory = (id: string) => {
     setExpandedCategories((previous) => ({ ...previous, [id]: !previous[id] }));
@@ -1088,6 +1189,193 @@ export function SmartBudgetingView() {
 
   return (
     <div className="space-y-6">
+      {isAddExpenseDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/80 px-4 py-6 backdrop-blur">
+          <div className="w-full max-w-4xl rounded-2xl border border-slate-800 bg-slate-900/95 p-6 shadow-2xl">
+            <form onSubmit={handleSubmitPlannedExpenses} className="space-y-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="text-xl font-semibold text-slate-100">Add planned expenses</h3>
+                  <p className="text-sm text-slate-400">
+                    Capture multiple planned expenses at once and assign them to categories.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCancelDialog}
+                  className="self-start rounded-lg border border-slate-700 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-800 text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                      <th className="px-3 py-2 font-semibold">Name</th>
+                      <th className="px-3 py-2 font-semibold">Amount (₹)</th>
+                      <th className="px-3 py-2 font-semibold">Due date</th>
+                      <th className="px-3 py-2 font-semibold">Category</th>
+                      <th className="px-3 py-2 font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {plannedEntries.map((entry, index) => {
+                      const isCreatingForRow = categoryCreationTargetId === entry.id;
+                      return (
+                        <tr key={entry.id} className="align-top">
+                          <td className="px-3 py-2">
+                            <input
+                              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                              placeholder="e.g. School fees"
+                              value={entry.name}
+                              onChange={(event) => handleEntryChange(entry.id, { name: event.target.value })}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              min={0}
+                              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                              placeholder="0"
+                              value={entry.amount}
+                              onChange={(event) => handleEntryChange(entry.id, { amount: event.target.value })}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="date"
+                              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                              value={entry.dueDate}
+                              onChange={(event) => handleEntryChange(entry.id, { dueDate: event.target.value })}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-col gap-2">
+                              <select
+                                className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                                value={entry.categoryId}
+                                onChange={(event) => handleEntryChange(entry.id, { categoryId: event.target.value })}
+                                disabled={expenseCategories.length === 0}
+                              >
+                                <option value="" disabled>
+                                  {expenseCategories.length === 0 ? 'No categories available' : 'Select category'}
+                                </option>
+                                {expenseCategories.map((category) => (
+                                  <option key={category.id} value={category.id}>
+                                    {category.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleCategoryCreation(entry.id)}
+                                className="self-start text-xs font-semibold text-accent"
+                              >
+                                {isCreatingForRow ? 'Cancel new category' : 'New category'}
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveEntryRow(entry.id)}
+                              className="rounded-lg border border-slate-800 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-600 hover:text-slate-100 disabled:opacity-40"
+                              disabled={!canRemoveRows}
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {categoryCreationTargetId && (
+                <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+                  <p className="text-sm font-semibold text-slate-200">Create a new category</p>
+                  <p className="text-xs text-slate-500">
+                    The new category will automatically be assigned to the selected planned expense row.
+                  </p>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <input
+                      className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                      placeholder="Category name"
+                      value={newCategoryName}
+                      onChange={(event) => setNewCategoryName(event.target.value)}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCreateCategory}
+                        className="rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-slate-900 disabled:opacity-50"
+                        disabled={!newCategoryName.trim()}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCategoryCreationTargetId(null);
+                          setNewCategoryName('');
+                        }}
+                        className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {shouldShowValidationError && (
+                <p className="text-sm text-danger">
+                  Please complete every row or remove the ones you do not need before saving.
+                </p>
+              )}
+              {!expenseCategories.length && (
+                <p className="text-sm text-warning">
+                  Add an expense category first to start planning your expenses.
+                </p>
+              )}
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={handleAddEntryRow}
+                  className="inline-flex items-center justify-center rounded-lg border border-dashed border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-500"
+                >
+                  + Add another row
+                </button>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    onClick={handleCancelDialog}
+                    className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-slate-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-success px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-50"
+                    disabled={
+                      isSubmittingPlannedExpenses ||
+                      hasInvalidEntries ||
+                      expenseCategories.length === 0
+                    }
+                  >
+                    {isSubmittingPlannedExpenses ? 'Saving...' : 'Save planned expenses'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <header>
         <h2 className="text-2xl font-semibold">Smart Budgeting & Planned Expenses</h2>
         <p className="text-sm text-slate-400">
@@ -1173,7 +1461,17 @@ export function SmartBudgetingView() {
               </option>
             ))}
           </select>
-          <span className="text-slate-500">Period: {viewMode === 'monthly' ? formatMonthLabel(selectedMonth) : selectedYear}</span>
+            <span className="text-slate-500">Period: {viewMode === 'monthly' ? formatMonthLabel(selectedMonth) : selectedYear}</span>
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={handleOpenDialog}
+            className="inline-flex items-center rounded-lg bg-success px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-emerald-400"
+          >
+            Add planned expense
+          </button>
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[2fr,1fr]">
@@ -1231,109 +1529,6 @@ export function SmartBudgetingView() {
           </div>
         </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-2">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Add planned expense</h4>
-            <div>
-              <label className="text-xs uppercase text-slate-500">Name</label>
-              <input
-                required
-                className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                value={formState.name}
-                onChange={(event) => setFormState((prev) => ({ ...prev, name: event.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs uppercase text-slate-500">Amount (₹)</label>
-              <input
-                type="number"
-                min={0}
-                required
-                className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                value={formState.amount}
-                onChange={(event) => setFormState((prev) => ({ ...prev, amount: Number(event.target.value) }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs uppercase text-slate-500">Due Date</label>
-              <input
-                type="date"
-                required
-                className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                value={formState.dueDate}
-                onChange={(event) => setFormState((prev) => ({ ...prev, dueDate: event.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs uppercase text-slate-500">Category</label>
-              <div className="mt-1 flex flex-col gap-2 sm:flex-row">
-                <select
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                  value={formState.categoryId}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, categoryId: event.target.value }))}
-                >
-                  {expenseCategories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setIsCreatingCategory((prev) => !prev)}
-                  className="rounded-lg border border-accent px-3 py-2 text-xs font-semibold text-accent sm:w-auto"
-                >
-                  {isCreatingCategory ? 'Cancel' : 'New Category'}
-                </button>
-              </div>
-              {isCreatingCategory && (
-                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                  <input
-                    className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                    placeholder="Category name"
-                    value={newCategoryName}
-                    onChange={(event) => setNewCategoryName(event.target.value)}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleCreateCategory}
-                    className="rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-slate-900 sm:w-auto"
-                  >
-                    Save
-                  </button>
-                </div>
-              )}
-            </div>
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-success px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-emerald-400"
-            >
-              Add planned expense
-            </button>
-          </form>
-
-          <div>
-            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">AI category suggestions</h4>
-            <ul className="mt-3 space-y-3 text-sm">
-              {categorySuggestions.map((category) => (
-                <li
-                  key={category.id}
-                  className="flex flex-col gap-2 rounded-xl border border-slate-800 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <span>{category.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => setFormState((prev) => ({ ...prev, categoryId: category.id }))}
-                    className="text-xs font-semibold text-accent"
-                  >
-                    Use suggestion
-                  </button>
-                </li>
-              ))}
-              {categorySuggestions.length === 0 && <p className="text-slate-500">No suggestions available.</p>}
-            </ul>
-          </div>
-        </div>
       </section>
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
