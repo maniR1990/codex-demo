@@ -17,7 +17,7 @@
     "firebase": "^10.12.4",
     "idb": "^7.1.1",
     "isomorphic-git": "^1.25.4",
-    "lightning-fs": "^4.3.0",
+    "@isomorphic-git/lightning-fs": "^4.3.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.23.0",
