@@ -90,6 +90,20 @@ export interface Insight extends Timestamped {
   title: string;
   description: string;
   severity: 'info' | 'warning' | 'critical';
+  metricSummary?: {
+    label: string;
+    value: string;
+    helperText?: string;
+  };
+  recommendations?: string[];
+  projection?: {
+    title: string;
+    description: string;
+    currentValue: number;
+    projectedValue: number;
+    timeframe: string;
+    unit: 'currency' | 'percentage';
+  };
 }
 
 export interface WealthAcceleratorMetrics {

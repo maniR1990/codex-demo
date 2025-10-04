@@ -57,6 +57,7 @@ interface FinancialStoreState extends FinancialSnapshot {
   isReady: boolean;
   isSyncing: boolean;
   isInitialised: boolean;
+  hasDismissedInitialSetup: boolean;
   lastSyncedAt?: string;
   firebaseStatus: {
     state: 'idle' | 'connecting' | 'connected' | 'error';
@@ -67,6 +68,8 @@ interface FinancialStoreState extends FinancialSnapshot {
 interface FinancialStoreActions {
   refresh(): Promise<void>;
   completeInitialSetup(payload: InitialSetupPayload): Promise<void>;
+  dismissInitialSetup(): void;
+  requestInitialSetup(): void;
   updateProfile(payload: Partial<Omit<Profile, 'createdAt' | 'updatedAt'>>): Promise<void>;
   addCategory(payload: Omit<Category, 'id' | 'createdAt' | 'updatedAt' | 'isCustom'> & { isCustom?: boolean }): Promise<Category>;
   updateCategory(id: string, payload: Partial<Category>): Promise<void>;
@@ -101,6 +104,26 @@ interface FinancialStoreActions {
 type FinancialStoreContextValue = FinancialStoreState & FinancialStoreActions;
 
 const FinancialStoreContext = createContext<FinancialStoreContextValue | undefined>(undefined);
+
+const INITIAL_SETUP_DISMISS_KEY = 'wealth-accelerator-initial-setup-dismissed';
+
+const readInitialSetupDismissed = () => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  return window.localStorage.getItem(INITIAL_SETUP_DISMISS_KEY) === 'true';
+};
+
+const persistInitialSetupDismissed = (value: boolean) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  if (value) {
+    window.localStorage.setItem(INITIAL_SETUP_DISMISS_KEY, 'true');
+  } else {
+    window.localStorage.removeItem(INITIAL_SETUP_DISMISS_KEY);
+  }
+};
 
 const createDefaultSnapshot = (): FinancialSnapshot => {
   const now = new Date().toISOString();
@@ -147,7 +170,8 @@ const deriveFromSnapshot = (snapshot: FinancialSnapshot): FinancialSnapshot => {
     plannedExpenses: snapshot.plannedExpenses,
     goals: snapshot.goals,
     categories: snapshot.categories,
-    monthlyIncomes: snapshot.monthlyIncomes
+    monthlyIncomes: snapshot.monthlyIncomes,
+    currency: snapshot.profile?.currency
   }).map((insight) => ({
     ...insight,
     createdAt: insight.createdAt ?? now,
@@ -168,12 +192,16 @@ const createDefaultState = (): FinancialStoreState => {
     isReady: false,
     isSyncing: false,
     isInitialised: false,
+    hasDismissedInitialSetup: false,
     firebaseStatus: { state: 'idle' }
   };
 };
 
 export function FinancialStoreProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<FinancialStoreState>(createDefaultState);
+  const [state, setState] = useState<FinancialStoreState>(() => ({
+    ...createDefaultState(),
+    hasDismissedInitialSetup: readInitialSetupDismissed()
+  }));
   const firebaseConfigRef = useRef<FirebaseSyncConfig | null>(null);
 
   useEffect(() => {
@@ -182,12 +210,19 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       const stored = await loadSnapshot();
       if (!mounted) return;
       const baseSnapshot = stored ? deriveFromSnapshot(stored) : createDefaultSnapshot();
-      setState((prev) => ({
-        ...prev,
-        ...baseSnapshot,
-        isReady: true,
-        isInitialised: Boolean(baseSnapshot.profile)
-      }));
+      setState((prev) => {
+        const initialised = Boolean(baseSnapshot.profile);
+        if (initialised) {
+          persistInitialSetupDismissed(false);
+        }
+        return {
+          ...prev,
+          ...baseSnapshot,
+          isReady: true,
+          isInitialised: initialised,
+          hasDismissedInitialSetup: initialised ? false : prev.hasDismissedInitialSetup
+        };
+      });
     })();
 
     return () => {
@@ -227,11 +262,16 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       };
       derivedSnapshot = deriveFromSnapshot(withMeta);
       void persistSnapshot(derivedSnapshot);
+      const initialised = Boolean(derivedSnapshot?.profile);
+      if (initialised) {
+        persistInitialSetupDismissed(false);
+      }
       return {
         ...prev,
         ...derivedSnapshot,
         isReady: true,
-        isInitialised: Boolean(derivedSnapshot?.profile)
+        isInitialised: initialised,
+        hasDismissedInitialSetup: initialised ? false : prev.hasDismissedInitialSetup
       };
     });
 
@@ -276,6 +316,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
           ...merged,
           isSyncing: false,
           isInitialised: Boolean(merged.profile),
+          hasDismissedInitialSetup: Boolean(merged.profile) ? false : prev.hasDismissedInitialSetup,
           lastSyncedAt: new Date().toISOString()
         }));
         return;
@@ -285,6 +326,9 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       ...prev,
       ...currentSnapshot,
       isSyncing: false,
+      hasDismissedInitialSetup: Boolean(currentSnapshot.profile)
+        ? false
+        : prev.hasDismissedInitialSetup,
       lastSyncedAt: new Date().toISOString()
     }));
   };
@@ -315,6 +359,22 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
         accounts
       };
     });
+  };
+
+  const dismissInitialSetup: FinancialStoreActions['dismissInitialSetup'] = () => {
+    persistInitialSetupDismissed(true);
+    setState((prev) => ({
+      ...prev,
+      hasDismissedInitialSetup: true
+    }));
+  };
+
+  const requestInitialSetup: FinancialStoreActions['requestInitialSetup'] = () => {
+    persistInitialSetupDismissed(false);
+    setState((prev) => ({
+      ...prev,
+      hasDismissedInitialSetup: false
+    }));
   };
 
   const updateProfile: FinancialStoreActions['updateProfile'] = async (payload) => {
@@ -618,7 +678,8 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       ...prev,
       ...derived,
       isReady: true,
-      isInitialised: Boolean(derived.profile)
+      isInitialised: Boolean(derived.profile),
+      hasDismissedInitialSetup: Boolean(derived.profile) ? false : prev.hasDismissedInitialSetup
     }));
   };
 
@@ -643,6 +704,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
             ...prev,
             ...merged,
             isInitialised: Boolean(merged.profile),
+            hasDismissedInitialSetup: Boolean(merged.profile) ? false : prev.hasDismissedInitialSetup,
             lastSyncedAt: new Date().toISOString(),
             firebaseStatus: { state: 'connected' }
           };
@@ -679,6 +741,8 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       ...state,
       refresh,
       completeInitialSetup,
+      dismissInitialSetup,
+      requestInitialSetup,
       updateProfile,
       addCategory,
       updateCategory,

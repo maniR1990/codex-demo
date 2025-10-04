@@ -7,21 +7,22 @@ const accountTypes: Account['type'][] = ['bank', 'cash', 'investment', 'loan', '
 interface AccountDraft {
   name: string;
   type: Account['type'];
-  balance: number;
+  balance: string;
   notes?: string;
 }
 
 export function InitialSetupDialog() {
-  const { isReady, isInitialised, completeInitialSetup } = useFinancialStore();
+  const { isReady, isInitialised, hasDismissedInitialSetup, completeInitialSetup, dismissInitialSetup } =
+    useFinancialStore();
   const [currency, setCurrency] = useState<Currency>('INR');
   const [financialStartDate, setFinancialStartDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [openingBalanceNote, setOpeningBalanceNote] = useState('');
   const [accounts, setAccounts] = useState<AccountDraft[]>([
-    { name: '', type: 'bank', balance: 0 },
-    { name: '', type: 'cash', balance: 0 }
+    { name: '', type: 'bank', balance: '' },
+    { name: '', type: 'cash', balance: '' }
   ]);
 
-  if (!isReady || isInitialised) {
+  if (!isReady || isInitialised || hasDismissedInitialSetup) {
     return null;
   }
 
@@ -30,7 +31,7 @@ export function InitialSetupDialog() {
   };
 
   const addAccountRow = () => {
-    setAccounts((prev) => [...prev, { name: '', type: 'bank', balance: 0 }]);
+    setAccounts((prev) => [...prev, { name: '', type: 'bank', balance: '' }]);
   };
 
   const handleSubmit = async (event: FormEvent) => {
@@ -40,7 +41,7 @@ export function InitialSetupDialog() {
       .map((account) => ({
         name: account.name,
         type: account.type,
-        balance: Number(account.balance) || 0,
+        balance: Number.parseFloat(account.balance || '0') || 0,
         currency,
         notes: account.notes
       }));
@@ -148,8 +149,9 @@ export function InitialSetupDialog() {
                     type="number"
                     min={0}
                     value={account.balance}
-                    onChange={(event) => updateAccount(index, { balance: Number(event.target.value) })}
+                    onChange={(event) => updateAccount(index, { balance: event.target.value })}
                     className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+                    placeholder="0"
                   />
                 </div>
                 <div className="sm:col-span-4">
@@ -166,7 +168,14 @@ export function InitialSetupDialog() {
           </div>
         </section>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <button
+            type="button"
+            onClick={dismissInitialSetup}
+            className="text-xs font-semibold uppercase tracking-wide text-slate-500 transition hover:text-slate-300"
+          >
+            Skip for now
+          </button>
           <button
             type="submit"
             className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-sky-300"

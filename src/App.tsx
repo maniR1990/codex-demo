@@ -11,6 +11,8 @@ import { InsightsView } from './views/InsightsView';
 import { WealthAcceleratorView } from './views/WealthAcceleratorView';
 import { OfflineSyncStatus } from './components/OfflineSyncStatus';
 import { InitialSetupDialog } from './components/InitialSetupDialog';
+import { QuickExpenseCapture } from './components/QuickExpenseCapture';
+import { useFinancialStore } from './store/FinancialStoreProvider';
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
@@ -20,6 +22,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 export default function App() {
   const [isNavOpen, setIsNavOpen] = useState(false);
   const location = useLocation();
+  const { isInitialised, hasDismissedInitialSetup, requestInitialSetup } = useFinancialStore();
 
   useEffect(() => {
     setIsNavOpen(false);
@@ -47,8 +50,17 @@ export default function App() {
               Menu
             </button>
           </div>
-          <div className="md:min-w-[260px]">
+          <div className="flex flex-col items-stretch gap-2 md:min-w-[260px]">
             <OfflineSyncStatus />
+            {!isInitialised && hasDismissedInitialSetup ? (
+              <button
+                type="button"
+                onClick={requestInitialSetup}
+                className="rounded-lg border border-accent/50 px-3 py-2 text-xs font-semibold text-accent transition hover:bg-accent/10"
+              >
+                Resume ledger setup
+              </button>
+            ) : null}
           </div>
         </div>
       </header>
@@ -101,6 +113,7 @@ export default function App() {
           </Routes>
         </main>
       </div>
+      <QuickExpenseCapture />
       <InitialSetupDialog />
     </div>
   );
