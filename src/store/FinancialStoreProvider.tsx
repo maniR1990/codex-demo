@@ -32,17 +32,6 @@ import {
 import { generateInsights } from '../services/insightsEngine';
 import { simulateWealthAccelerator } from '../services/wealthAcceleratorEngine';
 import { firebaseSyncService } from '../services/firebaseSyncService';
-import {
-  commitSnapshotToGit,
-  configureGitRemote,
-  exportGitRepository,
-  getGitStatus,
-  listGitHistory,
-  pushGitRemote,
-  type GitCommitOptions,
-  type GitCommitSummary,
-  type GitStatusSummary
-} from '../services/gitVersioningService';
 import { mergeSnapshots, normaliseSnapshot } from '../utils/snapshotMerge';
 
 const STORAGE_KEYS = {
@@ -64,12 +53,6 @@ interface SmartExportRulePayload {
   gpgKeyFingerprint?: string;
 }
 
-interface GitAuthConfig {
-  username?: string;
-  password?: string;
-  token?: string;
-}
-
 interface FinancialStoreState extends FinancialSnapshot {
   isReady: boolean;
   isSyncing: boolean;
@@ -79,11 +62,6 @@ interface FinancialStoreState extends FinancialSnapshot {
     state: 'idle' | 'connecting' | 'connected' | 'error';
     error?: string;
   };
-  gitStatus: GitStatusSummary & {
-    lastCommitId?: string;
-    lastCommitAt?: string;
-  };
-  gitHistory: GitCommitSummary[];
 }
 
 interface FinancialStoreActions {
@@ -118,11 +96,6 @@ interface FinancialStoreActions {
   importData(file: Blob): Promise<void>;
   configureFirebase(config: FirebaseSyncConfig): Promise<void>;
   disconnectFirebase(): void;
-  commitToGit(message: string, options?: Omit<GitCommitOptions, 'message'>): Promise<string>;
-  refreshGitHistory(): Promise<void>;
-  configureGit(remote: string, url: string): Promise<void>;
-  pushGit(remote: string, branch?: string, auth?: GitAuthConfig): Promise<void>;
-  exportGitSnapshot(): Promise<Blob>;
 }
 
 type FinancialStoreContextValue = FinancialStoreState & FinancialStoreActions;
@@ -195,9 +168,7 @@ const createDefaultState = (): FinancialStoreState => {
     isReady: false,
     isSyncing: false,
     isInitialised: false,
-    firebaseStatus: { state: 'idle' },
-    gitStatus: { head: null, remotes: [] },
-    gitHistory: []
+    firebaseStatus: { state: 'idle' }
   };
 };
 
@@ -217,7 +188,6 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
         isReady: true,
         isInitialised: Boolean(baseSnapshot.profile)
       }));
-      await refreshGitHistory();
     })();
 
     return () => {
@@ -244,10 +214,8 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
   });
 
   const persistAndSet = async (
-    updater: (snapshot: FinancialSnapshot) => FinancialSnapshot,
-    options: { evaluateAutomation?: boolean } = {}
+    updater: (snapshot: FinancialSnapshot) => FinancialSnapshot
   ) => {
-    const { evaluateAutomation = true } = options;
     let derivedSnapshot: FinancialSnapshot | null = null;
 
     setState((prev) => {
@@ -268,27 +236,10 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
         isInitialised: Boolean(derivedSnapshot?.profile)
       };
     });
-
-    if (evaluateAutomation && derivedSnapshot) {
-      await evaluateSmartExports(derivedSnapshot);
-    }
-  };
-
-  const refreshGitHistory = async () => {
-    const [history, status] = await Promise.all([listGitHistory(20), getGitStatus()]);
-    setState((prev) => ({
-      ...prev,
-      gitHistory: history,
-      gitStatus: {
-        ...status,
-        lastCommitAt: prev.gitStatus.lastCommitAt,
-        lastCommitId: prev.gitStatus.lastCommitId
-      }
-    }));
   };
 
   const logExportEvent = async (
-    event: Omit<ExportEvent, 'id' | 'createdAt' | 'updatedAt'>
+    event: Pick<ExportEvent, 'format' | 'context' | 'trigger'>
   ) => {
     const now = new Date().toISOString();
     await persistAndSet(
@@ -300,90 +251,14 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
             id: crypto.randomUUID(),
             createdAt: now,
             updatedAt: now,
-            ...event
+            trigger: event.trigger,
+            medium: 'file',
+            format: event.format,
+            context: event.context
           }
         ]
-      }),
-      { evaluateAutomation: false }
+      })
     );
-  };
-
-  const evaluateSmartExports = async (snapshot: FinancialSnapshot) => {
-    for (const rule of snapshot.smartExportRules) {
-      if (rule.target !== 'git') continue;
-      if (rule.type === 'weekly') {
-        const lastTrigger = rule.lastTriggeredAt ? new Date(rule.lastTriggeredAt).getTime() : 0;
-        const thresholdMs = rule.threshold * 24 * 60 * 60 * 1000;
-        if (Date.now() - lastTrigger < thresholdMs) continue;
-        await automateGitCommit(rule, snapshot, `Automated weekly export (${rule.threshold} day cadence)`);
-      } else if (rule.type === 'transaction-count') {
-        const lastEvent = [...snapshot.exportHistory]
-          .filter((entry) => entry.ruleId === rule.id && entry.medium === 'git')
-          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-        const baseline = lastEvent?.context?.startsWith('transactions=')
-          ? Number(lastEvent.context.replace('transactions=', ''))
-          : 0;
-        const diff = snapshot.transactions.length - baseline;
-        if (diff < rule.threshold) continue;
-        await automateGitCommit(
-          rule,
-          snapshot,
-          `Automated export after ${rule.threshold} transactions`,
-          `transactions=${snapshot.transactions.length}`
-        );
-      }
-    }
-  };
-
-  const automateGitCommit = async (
-    rule: SmartExportRule,
-    snapshot: FinancialSnapshot,
-    message: string,
-    context?: string
-  ) => {
-    const oid = await commitSnapshotToGit(snapshot, {
-      message,
-      encrypt: Boolean(rule.gpgKeyFingerprint),
-      keyFingerprint: rule.gpgKeyFingerprint
-    });
-    const now = new Date().toISOString();
-    await persistAndSet(
-      (current) => ({
-        ...current,
-        smartExportRules: current.smartExportRules.map((item) =>
-          item.id === rule.id
-            ? {
-                ...item,
-                lastTriggeredAt: now,
-                updatedAt: now
-              }
-            : item
-        ),
-        exportHistory: [
-          ...current.exportHistory,
-          {
-            id: crypto.randomUUID(),
-            trigger: 'automation',
-            medium: 'git',
-            format: 'git',
-            ruleId: rule.id,
-            context,
-            createdAt: now,
-            updatedAt: now
-          }
-        ]
-      }),
-      { evaluateAutomation: false }
-    );
-    setState((prev) => ({
-      ...prev,
-      gitStatus: {
-        ...prev.gitStatus,
-        lastCommitId: oid,
-        lastCommitAt: now
-      }
-    }));
-    await refreshGitHistory();
   };
 
   const refresh = async () => {
@@ -711,30 +586,26 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
     await persistAndSet((snapshot) => ({
       ...snapshot,
       smartExportRules: [...snapshot.smartExportRules, rule]
-    }),
-    { evaluateAutomation: false });
+    }));
     return rule;
   };
 
   const deleteSmartExportRule: FinancialStoreActions['deleteSmartExportRule'] = async (id) => {
-    await persistAndSet(
-      (snapshot) => ({
-        ...snapshot,
-        smartExportRules: snapshot.smartExportRules.filter((rule) => rule.id !== id)
-      }),
-      { evaluateAutomation: false }
-    );
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      smartExportRules: snapshot.smartExportRules.filter((rule) => rule.id !== id)
+    }));
   };
 
   const exportData: FinancialStoreActions['exportData'] = async () => {
     const blob = await exportSnapshot();
-    await logExportEvent({ trigger: 'manual', medium: 'file', format: 'json' });
+    await logExportEvent({ trigger: 'manual', format: 'json' });
     return blob;
   };
 
   const exportDataAsCsvAction: FinancialStoreActions['exportDataAsCsv'] = async () => {
     const blob = await exportSnapshotAsCsv();
-    await logExportEvent({ trigger: 'manual', medium: 'file', format: 'csv' });
+    await logExportEvent({ trigger: 'manual', format: 'csv' });
     return blob;
   };
 
@@ -802,38 +673,6 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const commitToGit: FinancialStoreActions['commitToGit'] = async (message, options) => {
-    const snapshot = deriveFromSnapshot(toSnapshot(state));
-    const oid = await commitSnapshotToGit(snapshot, { message, ...options });
-    const now = new Date().toISOString();
-    await logExportEvent({ trigger: 'manual', medium: 'git', format: 'git', context: message });
-    setState((prev) => ({
-      ...prev,
-      gitStatus: {
-        ...prev.gitStatus,
-        lastCommitId: oid,
-        lastCommitAt: now
-      }
-    }));
-    await refreshGitHistory();
-    return oid;
-  };
-
-  const configureGitAction: FinancialStoreActions['configureGit'] = async (remote, url) => {
-    await configureGitRemote(remote, url);
-    await refreshGitHistory();
-  };
-
-  const pushGitAction: FinancialStoreActions['pushGit'] = async (remote, branch = 'main', auth) => {
-    await pushGitRemote(remote, branch, auth);
-  };
-
-  const exportGitSnapshot: FinancialStoreActions['exportGitSnapshot'] = async () => {
-    const blob = await exportGitRepository();
-    await logExportEvent({ trigger: 'manual', medium: 'git', format: 'git', context: 'git-export' });
-    return blob;
-  };
-
   const contextValue = useMemo<FinancialStoreContextValue>(
     () => ({
       ...state,
@@ -861,12 +700,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       exportDataAsCsv: exportDataAsCsvAction,
       importData: importDataAction,
       configureFirebase,
-      disconnectFirebase,
-      commitToGit,
-      refreshGitHistory,
-      configureGit: configureGitAction,
-      pushGit: pushGitAction,
-      exportGitSnapshot
+      disconnectFirebase
     }),
     [state]
   );
