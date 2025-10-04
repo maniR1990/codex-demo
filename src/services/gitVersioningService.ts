@@ -7,6 +7,9 @@ import { encryptData } from './indexedDbService';
 
 const fs = new LightningFS('wealth-git', { wipe: false });
 const pfs = fs.promises;
+const gitApi = git as typeof git & {
+  isRepo?: (args: { fs: typeof fs; dir: string }) => Promise<boolean>;
+};
 const REPO_DIR = '/repo';
 let repoInitialised = false;
 
@@ -37,9 +40,9 @@ async function ensureRepo() {
     await pfs.mkdir(REPO_DIR);
   }
 
-  const isRepo = await git.isRepo({ fs, dir: REPO_DIR });
+  const isRepo = (await gitApi.isRepo?.({ fs, dir: REPO_DIR })) ?? false;
   if (!isRepo) {
-    await git.init({ fs, dir: REPO_DIR, defaultBranch: 'main' });
+    await gitApi.init({ fs, dir: REPO_DIR, defaultBranch: 'main' });
   }
   repoInitialised = true;
 }

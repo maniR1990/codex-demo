@@ -76,7 +76,7 @@ export function DataControlPanel() {
       name: ruleForm.name,
       type: ruleForm.type,
       threshold: Number(ruleForm.threshold),
-      target: 'git',
+      target: 'encrypted-bundle',
       gpgKeyFingerprint: ruleForm.gpgKeyFingerprint || undefined
     });
     setRuleForm({ name: '', type: ruleForm.type, threshold: ruleForm.type === 'weekly' ? 7 : 100, gpgKeyFingerprint: '' });
@@ -139,7 +139,7 @@ export function DataControlPanel() {
       <section className="mt-4 space-y-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-xs text-slate-400">
         <header className="flex items-center justify-between">
           <p className="text-sm font-semibold text-slate-200">Smart export automation</p>
-          <span className="text-[10px] uppercase text-slate-500">Optional encrypted Git rules</span>
+          <span className="text-[10px] uppercase text-slate-500">Optional encrypted bundle rules</span>
         </header>
         <form onSubmit={handleRuleSubmit} className="grid gap-2 sm:grid-cols-4">
           <input
@@ -191,8 +191,8 @@ export function DataControlPanel() {
                 <p className="font-semibold text-slate-200">{rule.name}</p>
                 <p className="text-[11px] text-slate-500">
                   {rule.type === 'weekly'
-                    ? `Commits every ${rule.threshold} day(s)`
-                    : `Commits after ${rule.threshold} new transactions`}
+                    ? `Exports every ${rule.threshold} day(s)`
+                    : `Exports after ${rule.threshold} new transactions`}
                   {rule.lastTriggeredAt && ` • Last run ${new Date(rule.lastTriggeredAt).toLocaleString('en-IN')}`}
                 </p>
               </div>

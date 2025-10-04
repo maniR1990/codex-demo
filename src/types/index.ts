@@ -104,7 +104,7 @@ export interface SmartExportRule extends Timestamped {
   name: string;
   type: 'weekly' | 'transaction-count';
   threshold: number;
-  target: 'git' | 'file';
+  target: 'encrypted-bundle' | 'file';
   gpgKeyFingerprint?: string;
   lastTriggeredAt?: string;
 }
@@ -113,8 +113,8 @@ export interface ExportEvent extends Timestamped {
   id: string;
   ruleId?: string;
   trigger: 'manual' | 'automation';
-  medium: 'file' | 'git';
-  format: 'json' | 'csv' | 'git';
+  medium: 'file' | 'encrypted-bundle';
+  format: 'json' | 'csv' | 'encrypted-bundle';
   context?: string;
 }
 

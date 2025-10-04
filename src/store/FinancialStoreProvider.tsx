@@ -310,7 +310,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
 
   const evaluateSmartExports = async (snapshot: FinancialSnapshot) => {
     for (const rule of snapshot.smartExportRules) {
-      if (rule.target !== 'git') continue;
+      if (rule.target !== 'encrypted-bundle') continue;
       if (rule.type === 'weekly') {
         const lastTrigger = rule.lastTriggeredAt ? new Date(rule.lastTriggeredAt).getTime() : 0;
         const thresholdMs = rule.threshold * 24 * 60 * 60 * 1000;
@@ -318,7 +318,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
         await automateGitCommit(rule, snapshot, `Automated weekly export (${rule.threshold} day cadence)`);
       } else if (rule.type === 'transaction-count') {
         const lastEvent = [...snapshot.exportHistory]
-          .filter((entry) => entry.ruleId === rule.id && entry.medium === 'git')
+          .filter((entry) => entry.ruleId === rule.id && entry.medium === 'encrypted-bundle')
           .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
         const baseline = lastEvent?.context?.startsWith('transactions=')
           ? Number(lastEvent.context.replace('transactions=', ''))
@@ -364,8 +364,8 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
           {
             id: crypto.randomUUID(),
             trigger: 'automation',
-            medium: 'git',
-            format: 'git',
+            medium: 'encrypted-bundle',
+            format: 'encrypted-bundle',
             ruleId: rule.id,
             context,
             createdAt: now,
@@ -806,7 +806,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
     const snapshot = deriveFromSnapshot(toSnapshot(state));
     const oid = await commitSnapshotToGit(snapshot, { message, ...options });
     const now = new Date().toISOString();
-    await logExportEvent({ trigger: 'manual', medium: 'git', format: 'git', context: message });
+    await logExportEvent({ trigger: 'manual', medium: 'encrypted-bundle', format: 'encrypted-bundle', context: message });
     setState((prev) => ({
       ...prev,
       gitStatus: {
@@ -830,7 +830,12 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
 
   const exportGitSnapshot: FinancialStoreActions['exportGitSnapshot'] = async () => {
     const blob = await exportGitRepository();
-    await logExportEvent({ trigger: 'manual', medium: 'git', format: 'git', context: 'git-export' });
+    await logExportEvent({
+      trigger: 'manual',
+      medium: 'encrypted-bundle',
+      format: 'encrypted-bundle',
+      context: 'git-export'
+    });
     return blob;
   };
 
