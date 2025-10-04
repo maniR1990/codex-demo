@@ -323,6 +323,7 @@ export function IncomeManagementView() {
   );
 
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
+  const [activeSection, setActiveSection] = useState<'income' | 'category'>('income');
 
   const toggleNode = (id: string) => {
     setExpandedNodes((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -722,33 +723,44 @@ export function IncomeManagementView() {
         </div>
         <nav
           aria-label="Income & Category Management shortcuts"
-          className="flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:flex-row sm:items-start"
+          className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 sm:flex-row sm:items-start"
         >
-          <a
-            className="flex-1 rounded-xl border border-slate-800 bg-slate-950/60 p-4 transition hover:border-accent hover:text-accent"
-            href="#monthly-income-tracker"
+          <button
+            type="button"
+            onClick={() => setActiveSection('income')}
+            className={`flex-1 rounded-xl border px-4 py-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:py-6 ${
+              activeSection === 'income'
+                ? 'border-accent/60 bg-accent/10 text-accent shadow-[0_0_0_1px_rgba(94,234,212,0.35)]'
+                : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:border-accent/40 hover:text-accent'
+            }`}
           >
-            <span className="block text-sm font-semibold text-slate-200">Monthly income tracker</span>
+            <span className="block text-sm font-semibold">Monthly income tracker</span>
             <span className="mt-1 block text-xs text-slate-500">
               Log the exact receipts for each month or year to mirror real-world cash flow swings.
             </span>
-          </a>
-          <a
-            className="flex-1 rounded-xl border border-slate-800 bg-slate-950/60 p-4 transition hover:border-accent hover:text-accent"
-            href="#category-governance"
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSection('category')}
+            className={`flex-1 rounded-xl border px-4 py-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:py-6 ${
+              activeSection === 'category'
+                ? 'border-accent/60 bg-accent/10 text-accent shadow-[0_0_0_1px_rgba(94,234,212,0.35)]'
+                : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:border-accent/40 hover:text-accent'
+            }`}
           >
-            <span className="block text-sm font-semibold text-slate-200">Category governance</span>
+            <span className="block text-sm font-semibold">Category governance</span>
             <span className="mt-1 block text-xs text-slate-500">
               Navigate directly to manage hierarchies, budgets, and tags that steer disciplined spending.
             </span>
-          </a>
+          </button>
         </nav>
       </header>
 
-      <section
-        id="monthly-income-tracker"
-        className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6"
-      >
+      {activeSection === 'income' && (
+        <section
+          id="monthly-income-tracker"
+          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow-lg shadow-slate-900/40 sm:p-6"
+        >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-lg font-semibold">Monthly income tracker</h3>
@@ -1021,12 +1033,14 @@ export function IncomeManagementView() {
             </tbody>
           </table>
         </div>
-      </section>
+        </section>
+      )}
 
-      <section
-        id="category-governance"
-        className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6"
-      >
+      {activeSection === 'category' && (
+        <section
+          id="category-governance"
+          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow-lg shadow-slate-900/40 sm:p-6"
+        >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-lg font-semibold">Category governance</h3>
@@ -1197,7 +1211,8 @@ export function IncomeManagementView() {
             </div>
           ))}
         </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }
