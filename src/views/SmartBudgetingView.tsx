@@ -487,22 +487,26 @@ export function SmartBudgetingView() {
     budgetDraft.trim() !== '' && (Number.isNaN(Number(budgetDraft)) || Number(budgetDraft) < 0);
   const isSavingBudget = savingBudgetId === focusedCategoryId;
 
-  const expandAllCategories = () => {
+  const updateAllCategoryExpansion = (expanded: boolean) => {
     const next: Record<string, boolean> = {};
-    expenseCategories.forEach((category) => {
-      next[category.id] = true;
-    });
+    const visit = (nodes: CategoryNode[]) => {
+      nodes.forEach((node) => {
+        next[node.id] = expanded;
+        if (node.children.length > 0) {
+          visit(node.children);
+        }
+      });
+    };
+    visit(expenseCategoryTree);
     setExpandedCategories(next);
   };
 
+  const expandAllCategories = () => {
+    updateAllCategoryExpansion(true);
+  };
+
   const collapseAllCategories = () => {
-    const next: Record<string, boolean> = {};
-    expenseCategories.forEach((category) => {
-      const parent = expenseCategories.find((candidate) => candidate.id === category.parentId);
-      const isRoot = !category.parentId || !parent;
-      next[category.id] = isRoot;
-    });
-    setExpandedCategories(next);
+    updateAllCategoryExpansion(false);
   };
 
   const statusBadge = (status: PlannedExpenseItem['status']) => {
