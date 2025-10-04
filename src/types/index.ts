@@ -56,6 +56,7 @@ export interface PlannedExpenseItem extends Timestamped {
   id: string;
   name: string;
   plannedAmount: number;
+  actualAmount?: number;
   categoryId: string;
   dueDate: string;
   status: 'pending' | 'purchased' | 'cancelled' | 'reconciled';
