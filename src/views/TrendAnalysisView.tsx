@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { useFinancialStore } from '../store/FinancialStoreProvider';
 
@@ -7,7 +7,9 @@ function formatCurrency(value: number) {
 }
 
 interface MonthlySummary {
-  month: string;
+  key: string;
+  label: string;
+  year: string;
   income: number;
   expenses: number;
   net: number;
@@ -22,7 +24,14 @@ export function TrendAnalysisView() {
       const key = format(date, 'yyyy-MM');
       const summary = map.get(key);
       if (summary) return summary;
-      const nextSummary = { month: format(date, 'MMM yyyy'), income: 0, expenses: 0, net: 0 };
+      const nextSummary: MonthlySummary = {
+        key,
+        label: format(date, 'MMM yyyy'),
+        year: format(date, 'yyyy'),
+        income: 0,
+        expenses: 0,
+        net: 0
+      };
       map.set(key, nextSummary);
       return nextSummary;
     };
@@ -51,6 +60,60 @@ export function TrendAnalysisView() {
       .map(([, value]) => value);
   }, [transactions, monthlyIncomes]);
 
+  const [viewMode, setViewMode] = useState<'monthly' | 'yearly'>('monthly');
+  const [selectedYear, setSelectedYear] = useState<string>('all');
+
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    monthlySummaries.forEach((summary) => years.add(summary.year));
+    return Array.from(years).sort();
+  }, [monthlySummaries]);
+
+  useEffect(() => {
+    if (selectedYear !== 'all' && !availableYears.includes(selectedYear)) {
+      setSelectedYear('all');
+    }
+  }, [availableYears, selectedYear]);
+
+  const filteredMonthlySummaries = useMemo(
+    () => (selectedYear === 'all' ? monthlySummaries : monthlySummaries.filter((summary) => summary.year === selectedYear)),
+    [monthlySummaries, selectedYear]
+  );
+
+  const yearlySummaries = useMemo(() => {
+    const map = new Map<string, { year: string; income: number; expenses: number; net: number }>();
+    monthlySummaries.forEach((summary) => {
+      const entry = map.get(summary.year) ?? { year: summary.year, income: 0, expenses: 0, net: 0 };
+      entry.income += summary.income;
+      entry.expenses += summary.expenses;
+      entry.net += summary.net;
+      map.set(summary.year, entry);
+    });
+    return Array.from(map.values()).sort((a, b) => (a.year > b.year ? 1 : -1));
+  }, [monthlySummaries]);
+
+  const incomeSeries = viewMode === 'monthly'
+    ? filteredMonthlySummaries.map((item, index) => ({ x: index, y: item.income }))
+    : yearlySummaries.map((item, index) => ({ x: index, y: item.income }));
+
+  const expenseSeries = viewMode === 'monthly'
+    ? filteredMonthlySummaries.map((item, index) => ({ x: index, y: item.expenses }))
+    : yearlySummaries.map((item, index) => ({ x: index, y: item.expenses }));
+
+  const axisLabels = viewMode === 'monthly'
+    ? filteredMonthlySummaries.map((item) => item.label)
+    : yearlySummaries.map((item) => item.year);
+
+  const monthlyPeak = filteredMonthlySummaries.reduce(
+    (max, item) => Math.max(max, item.income, item.expenses),
+    0
+  );
+  const yearlyPeak = yearlySummaries.reduce(
+    (max, item) => Math.max(max, item.income, item.expenses),
+    0
+  );
+  const maxValue = viewMode === 'monthly' ? Math.max(monthlyPeak, 1) : Math.max(yearlyPeak, 1);
+
   const customCategoryTotals = useMemo(() => {
     const totals = new Map<string, number>();
     transactions.forEach((txn) => {
@@ -70,12 +133,50 @@ export function TrendAnalysisView() {
       </header>
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
-        <h3 className="text-lg font-semibold">Monthly Cash Flow</h3>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="text-lg font-semibold">Cash Flow Trends</h3>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+            <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode('monthly')}
+                className={`rounded-md px-3 py-1 font-semibold ${
+                  viewMode === 'monthly' ? 'bg-accent text-slate-900' : 'text-slate-300'
+                }`}
+              >
+                Monthly
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('yearly')}
+                className={`rounded-md px-3 py-1 font-semibold ${
+                  viewMode === 'yearly' ? 'bg-accent text-slate-900' : 'text-slate-300'
+                }`}
+              >
+                Yearly
+              </button>
+            </div>
+            {viewMode === 'monthly' && availableYears.length > 1 && (
+              <select
+                className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+                value={selectedYear}
+                onChange={(event) => setSelectedYear(event.target.value)}
+              >
+                <option value="all">All years</option>
+                {availableYears.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
         <svg viewBox="0 0 600 240" className="mt-4 w-full text-slate-400">
           <Grid />
-          <LineSeries data={monthlySummaries.map((item, index) => ({ x: index, y: item.income }))} color="#38bdf8" />
-          <LineSeries data={monthlySummaries.map((item, index) => ({ x: index, y: item.expenses }))} color="#ef4444" />
-          <Axis labels={monthlySummaries.map((item) => item.month)} max={Math.max(...monthlySummaries.map((item) => Math.max(item.income, item.expenses)), 1)} />
+          <LineSeries data={incomeSeries} color="#38bdf8" />
+          <LineSeries data={expenseSeries} color="#ef4444" />
+          <Axis labels={axisLabels} max={maxValue} />
         </svg>
         <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-slate-400">
           <Legend color="#38bdf8" label="Income" />

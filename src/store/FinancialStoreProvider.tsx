@@ -38,6 +38,23 @@ const STORAGE_KEYS = {
   firebase: 'wealth-accelerator-firebase-config'
 } as const;
 
+const sanitiseTags = (tags?: string[]): string[] =>
+  (tags ?? [])
+    .map((tag) => tag.trim().toLowerCase())
+    .filter((tag, index, array) => tag.length > 0 && array.indexOf(tag) === index);
+
+const sanitiseBudgets = (budgets?: Category['budgets']): Category['budgets'] | undefined => {
+  if (!budgets) return undefined;
+  const normalised: Category['budgets'] = {};
+  if (typeof budgets.monthly === 'number' && !Number.isNaN(budgets.monthly)) {
+    normalised.monthly = budgets.monthly;
+  }
+  if (typeof budgets.yearly === 'number' && !Number.isNaN(budgets.yearly)) {
+    normalised.yearly = budgets.yearly;
+  }
+  return Object.keys(normalised).length ? normalised : undefined;
+};
+
 interface InitialSetupPayload {
   currency: Profile['currency'];
   financialStartDate: string;
@@ -71,7 +88,16 @@ interface FinancialStoreActions {
   dismissInitialSetup(): void;
   requestInitialSetup(): void;
   updateProfile(payload: Partial<Omit<Profile, 'createdAt' | 'updatedAt'>>): Promise<void>;
-  addCategory(payload: Omit<Category, 'id' | 'createdAt' | 'updatedAt' | 'isCustom'> & { isCustom?: boolean }): Promise<Category>;
+  addCategory(
+    payload: {
+      name: string;
+      type: Category['type'];
+      parentId?: string;
+      tags?: string[];
+      budgets?: Category['budgets'];
+      isCustom?: boolean;
+    }
+  ): Promise<Category>;
   updateCategory(id: string, payload: Partial<Category>): Promise<void>;
   deleteCategory(id: string): Promise<void>;
   addMonthlyIncome(payload: Omit<MonthlyIncome, 'id' | 'createdAt' | 'updatedAt'>): Promise<MonthlyIncome>;
@@ -99,6 +125,7 @@ interface FinancialStoreActions {
   importData(file: Blob): Promise<void>;
   configureFirebase(config: FirebaseSyncConfig): Promise<void>;
   disconnectFirebase(): void;
+  resetLedger(): Promise<void>;
 }
 
 type FinancialStoreContextValue = FinancialStoreState & FinancialStoreActions;
@@ -185,6 +212,16 @@ const deriveFromSnapshot = (snapshot: FinancialSnapshot): FinancialSnapshot => {
   });
 };
 
+const isSnapshotInitialised = (snapshot: Partial<FinancialSnapshot>): boolean =>
+  Boolean(
+    snapshot.profile ||
+      (snapshot.accounts && snapshot.accounts.length > 0) ||
+      (snapshot.transactions && snapshot.transactions.length > 0) ||
+      (snapshot.monthlyIncomes && snapshot.monthlyIncomes.length > 0) ||
+      (snapshot.plannedExpenses && snapshot.plannedExpenses.length > 0) ||
+      (snapshot.recurringExpenses && snapshot.recurringExpenses.length > 0)
+  );
+
 const createDefaultState = (): FinancialStoreState => {
   const snapshot = createDefaultSnapshot();
   return {
@@ -210,19 +247,12 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       const stored = await loadSnapshot();
       if (!mounted) return;
       const baseSnapshot = stored ? deriveFromSnapshot(stored) : createDefaultSnapshot();
-      setState((prev) => {
-        const initialised = Boolean(baseSnapshot.profile);
-        if (initialised) {
-          persistInitialSetupDismissed(false);
-        }
-        return {
-          ...prev,
-          ...baseSnapshot,
-          isReady: true,
-          isInitialised: initialised,
-          hasDismissedInitialSetup: initialised ? false : prev.hasDismissedInitialSetup
-        };
-      });
+      setState((prev) => ({
+        ...prev,
+        ...baseSnapshot,
+        isReady: true,
+        isInitialised: isSnapshotInitialised(baseSnapshot)
+      }));
     })();
 
     return () => {
@@ -270,8 +300,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
         ...prev,
         ...derivedSnapshot,
         isReady: true,
-        isInitialised: initialised,
-        hasDismissedInitialSetup: initialised ? false : prev.hasDismissedInitialSetup
+        isInitialised: isSnapshotInitialised(derivedSnapshot)
       };
     });
 
@@ -315,8 +344,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
           ...prev,
           ...merged,
           isSyncing: false,
-          isInitialised: Boolean(merged.profile),
-          hasDismissedInitialSetup: Boolean(merged.profile) ? false : prev.hasDismissedInitialSetup,
+          isInitialised: isSnapshotInitialised(merged),
           lastSyncedAt: new Date().toISOString()
         }));
         return;
@@ -326,10 +354,8 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       ...prev,
       ...currentSnapshot,
       isSyncing: false,
-      hasDismissedInitialSetup: Boolean(currentSnapshot.profile)
-        ? false
-        : prev.hasDismissedInitialSetup,
-      lastSyncedAt: new Date().toISOString()
+      lastSyncedAt: new Date().toISOString(),
+      isInitialised: isSnapshotInitialised(currentSnapshot)
     }));
   };
 
@@ -404,6 +430,8 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       ...payload,
       id: crypto.randomUUID(),
       isCustom: payload.isCustom ?? true,
+      tags: sanitiseTags(payload.tags),
+      budgets: sanitiseBudgets(payload.budgets),
       createdAt: now,
       updatedAt: now
     };
@@ -422,6 +450,8 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
           ? {
               ...category,
               ...payload,
+              tags: payload.tags ? sanitiseTags(payload.tags) : category.tags,
+              budgets: payload.budgets ? sanitiseBudgets(payload.budgets) : category.budgets,
               updatedAt: new Date().toISOString()
             }
           : category
@@ -443,6 +473,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
           name: 'Uncategorised',
           type: deleted?.type ?? 'expense',
           isCustom: true,
+          tags: [],
           createdAt: now,
           updatedAt: now
         } satisfies Category;
@@ -678,8 +709,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       ...prev,
       ...derived,
       isReady: true,
-      isInitialised: Boolean(derived.profile),
-      hasDismissedInitialSetup: Boolean(derived.profile) ? false : prev.hasDismissedInitialSetup
+      isInitialised: isSnapshotInitialised(derived)
     }));
   };
 
@@ -703,8 +733,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
           return {
             ...prev,
             ...merged,
-            isInitialised: Boolean(merged.profile),
-            hasDismissedInitialSetup: Boolean(merged.profile) ? false : prev.hasDismissedInitialSetup,
+            isInitialised: isSnapshotInitialised(merged),
             lastSyncedAt: new Date().toISOString(),
             firebaseStatus: { state: 'connected' }
           };
@@ -720,6 +749,19 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       window.localStorage.removeItem(STORAGE_KEYS.firebase);
     }
     setState((prev) => ({ ...prev, firebaseStatus: { state: 'idle' } }));
+  };
+
+  const resetLedger: FinancialStoreActions['resetLedger'] = async () => {
+    const blankSnapshot = deriveFromSnapshot(createDefaultSnapshot());
+    await persistSnapshot(blankSnapshot);
+    setState((prev) => ({
+      ...prev,
+      ...blankSnapshot,
+      isReady: true,
+      isSyncing: false,
+      isInitialised: false,
+      lastSyncedAt: undefined
+    }));
   };
 
   useEffect(() => {
@@ -765,7 +807,8 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       exportDataAsCsv: exportDataAsCsvAction,
       importData: importDataAction,
       configureFirebase,
-      disconnectFirebase
+      disconnectFirebase,
+      resetLedger
     }),
     [state]
   );

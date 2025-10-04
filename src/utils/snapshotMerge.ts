@@ -1,6 +1,7 @@
 import type {
   Account,
   Category,
+  CategoryBudgets,
   ExportEvent,
   FinancialSnapshot,
   Goal,
@@ -24,6 +25,20 @@ const ensureTimestamps = <T extends Timestamped>(record: T, fallback: string): T
 const mapWithTimestamps = <T extends Timestamped>(items: T[] | undefined, fallback: string): T[] =>
   (items ?? []).map((item) => ensureTimestamps(item, fallback));
 
+const normaliseBudgets = (budgets?: Category['budgets']): CategoryBudgets | undefined => {
+  if (!budgets) return undefined;
+  const { monthly, yearly } = budgets;
+  const hasMonthly = typeof monthly === 'number' && !Number.isNaN(monthly);
+  const hasYearly = typeof yearly === 'number' && !Number.isNaN(yearly);
+  if (!hasMonthly && !hasYearly) {
+    return undefined;
+  }
+  return {
+    ...(hasMonthly ? { monthly } : {}),
+    ...(hasYearly ? { yearly } : {})
+  };
+};
+
 export function normaliseSnapshot(snapshot?: Partial<FinancialSnapshot> | null): FinancialSnapshot {
   const now = new Date().toISOString();
   const profile = snapshot?.profile ? ensureTimestamps<Profile>(snapshot.profile, now) : null;
@@ -42,10 +57,18 @@ export function normaliseSnapshot(snapshot?: Partial<FinancialSnapshot> | null):
         updatedAt: now
       };
 
+  const categories = mapWithTimestamps<Category>(snapshot?.categories, now).map((category) => ({
+    ...category,
+    tags: Array.isArray(category.tags)
+      ? category.tags.map((tag) => tag.trim()).filter((tag) => tag.length > 0)
+      : [],
+    budgets: normaliseBudgets(category.budgets)
+  }));
+
   return {
     profile,
     accounts: mapWithTimestamps<Account>(snapshot?.accounts, now),
-    categories: mapWithTimestamps<Category>(snapshot?.categories, now),
+    categories,
     transactions: mapWithTimestamps<Transaction>(snapshot?.transactions, now),
     monthlyIncomes: mapWithTimestamps<MonthlyIncome>(snapshot?.monthlyIncomes, now),
     plannedExpenses: mapWithTimestamps<PlannedExpenseItem>(snapshot?.plannedExpenses, now),
