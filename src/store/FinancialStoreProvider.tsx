@@ -213,9 +213,7 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
     lastLocalChangeAt: value.lastLocalChangeAt
   });
 
-  const persistAndSet = async (
-    updater: (snapshot: FinancialSnapshot) => FinancialSnapshot
-  ) => {
+  const persistAndSet = async (updater: (snapshot: FinancialSnapshot) => FinancialSnapshot) => {
     let derivedSnapshot: FinancialSnapshot | null = null;
 
     setState((prev) => {
@@ -236,29 +234,32 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
         isInitialised: Boolean(derivedSnapshot?.profile)
       };
     });
+
+    if (derivedSnapshot) {
+      await evaluateSmartExports(derivedSnapshot);
+    }
   };
 
   const logExportEvent = async (
     event: Pick<ExportEvent, 'format' | 'context' | 'trigger'>
   ) => {
     const now = new Date().toISOString();
-    await persistAndSet(
-      (snapshot) => ({
-        ...snapshot,
-        exportHistory: [
-          ...snapshot.exportHistory,
-          {
-            id: crypto.randomUUID(),
-            createdAt: now,
-            updatedAt: now,
-            trigger: event.trigger,
-            medium: 'file',
-            format: event.format,
-            context: event.context
-          }
-        ]
-      })
-    );
+    await persistAndSet((snapshot) => ({
+      ...snapshot,
+      exportHistory: [
+        ...snapshot.exportHistory,
+        {
+          id: crypto.randomUUID(),
+          createdAt: now,
+          updatedAt: now,
+          ...event
+        }
+      ]
+    }));
+  };
+
+  const evaluateSmartExports = async (_snapshot: FinancialSnapshot) => {
+    // Git-based automation has been retired; this remains for future extensibility.
   };
 
   const refresh = async () => {
