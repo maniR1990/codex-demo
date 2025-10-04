@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { addMonths, format, formatISO, parseISO } from 'date-fns';
 import { useFinancialStore } from '../store/FinancialStoreProvider';
-import type { PlannedExpenseItem } from '../types';
+import type { Category, PlannedExpenseItem, Transaction } from '../types';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
@@ -184,20 +184,208 @@ export function SmartBudgetingView() {
     [selectedCategoryId, periodPlannedExpenses, periodTransactions, viewMode, categoryLookup, expenseDescendantsMap, allExpenseIdsSet]
   );
 
-  const reconciliations = useMemo(
-    () =>
-      plannedExpenses.map((item) => ({
-        item,
-        match: transactions.find(
+  type PlannedExpenseSpendingHealth = 'not-spent' | 'under' | 'over';
+
+  type PlannedExpenseDetail = {
+    item: PlannedExpenseItem;
+    match?: Transaction;
+    actual: number;
+    variance: number;
+    status: PlannedExpenseSpendingHealth;
+  };
+
+  type CategoryNode = Category & { children: CategoryNode[] };
+
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{ categoryId: string; plannedAmount: string; actualAmount: string }>({
+    categoryId: '',
+    plannedAmount: '',
+    actualAmount: ''
+  });
+  const [savingItemId, setSavingItemId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setExpandedCategories((previous) => {
+      const next: Record<string, boolean> = {};
+      expenseCategories.forEach((category) => {
+        const parent = expenseCategories.find((candidate) => candidate.id === category.parentId);
+        const isRoot = !category.parentId || !parent;
+        next[category.id] = previous[category.id] ?? isRoot;
+      });
+      return next;
+    });
+  }, [expenseCategories]);
+
+  useEffect(() => {
+    if (editingItemId && !periodPlannedExpenses.some((item) => item.id === editingItemId)) {
+      setEditingItemId(null);
+    }
+  }, [editingItemId, periodPlannedExpenses]);
+
+  const spendingBadgeStyles: Record<PlannedExpenseSpendingHealth, { label: string; badgeClass: string; toneClass: string }> = {
+    'not-spent': {
+      label: 'Awaiting spend',
+      badgeClass: 'bg-slate-800 text-slate-300',
+      toneClass: 'text-slate-300'
+    },
+    under: {
+      label: 'Spent wisely',
+      badgeClass: 'bg-success/20 text-success',
+      toneClass: 'text-success'
+    },
+    over: {
+      label: 'Overspent',
+      badgeClass: 'bg-danger/20 text-danger',
+      toneClass: 'text-danger'
+    }
+  };
+
+  const progressColorByStatus: Record<PlannedExpenseSpendingHealth, string> = {
+    'not-spent': '#38bdf8',
+    under: '#10b981',
+    over: '#ef4444'
+  };
+
+  const plannedExpenseDetails = useMemo<PlannedExpenseDetail[]>(() => {
+    return periodPlannedExpenses
+      .map((item) => {
+        const match = periodTransactions.find(
           (txn) =>
             txn.categoryId === item.categoryId &&
             txn.amount < 0 &&
-            Math.abs(Math.abs(txn.amount) - item.plannedAmount) <=
-              Math.max(500, item.plannedAmount * 0.1)
-        )
-      })),
-    [plannedExpenses, transactions]
+            Math.abs(Math.abs(txn.amount) - item.plannedAmount) <= Math.max(500, item.plannedAmount * 0.1)
+        );
+        const matchedAmount = match ? Math.abs(match.amount) : 0;
+        const actualAmount =
+          typeof item.actualAmount === 'number' && !Number.isNaN(item.actualAmount)
+            ? item.actualAmount
+            : matchedAmount;
+        const variance = item.plannedAmount - actualAmount;
+        const status: PlannedExpenseSpendingHealth =
+          actualAmount === 0 ? 'not-spent' : variance >= 0 ? 'under' : 'over';
+        return {
+          item,
+          match,
+          actual: actualAmount,
+          variance,
+          status
+        } satisfies PlannedExpenseDetail;
+      })
+      .sort((a, b) => new Date(a.item.dueDate).getTime() - new Date(b.item.dueDate).getTime());
+  }, [periodPlannedExpenses, periodTransactions]);
+
+  const expenseCategoryTree = useMemo<CategoryNode[]>(() => {
+    const nodes = new Map<string, CategoryNode>();
+    expenseCategories.forEach((category) => {
+      nodes.set(category.id, { ...category, children: [] });
+    });
+    const roots: CategoryNode[] = [];
+    nodes.forEach((node) => {
+      if (node.parentId && nodes.has(node.parentId)) {
+        nodes.get(node.parentId)!.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    });
+    const sortNodes = (list: CategoryNode[]) => {
+      list.sort((a, b) => a.name.localeCompare(b.name));
+      list.forEach((child) => sortNodes(child.children));
+    };
+    sortNodes(roots);
+    return roots;
+  }, [expenseCategories]);
+
+  const categoryOptions = useMemo(() => {
+    const options: Array<{ id: string; label: string }> = [];
+    const walk = (nodes: CategoryNode[], depth = 0) => {
+      nodes.forEach((node) => {
+        const prefix = depth === 0 ? '' : `${'—'.repeat(depth)} `;
+        options.push({ id: node.id, label: `${prefix}${node.name}` });
+        if (node.children.length > 0) {
+          walk(node.children, depth + 1);
+        }
+      });
+    };
+    walk(expenseCategoryTree);
+    return options;
+  }, [expenseCategoryTree]);
+
+  const expenseCategoryIds = useMemo(() => new Set(expenseCategories.map((category) => category.id)), [expenseCategories]);
+
+  const { itemsByCategory, categorySummaries } = useMemo(() => {
+    const byCategory = new Map<string, PlannedExpenseDetail[]>();
+    plannedExpenseDetails.forEach((detail) => {
+      const list = byCategory.get(detail.item.categoryId) ?? [];
+      list.push(detail);
+      byCategory.set(detail.item.categoryId, list);
+    });
+
+    const summaries = new Map<
+      string,
+      { planned: number; actual: number; variance: number; itemCount: number }
+    >();
+
+    expenseCategories.forEach((category) => {
+      const ids = expenseDescendantsMap.get(category.id) ?? new Set<string>([category.id]);
+      let planned = 0;
+      let actual = 0;
+      let itemCount = 0;
+      ids.forEach((id) => {
+        const entries = byCategory.get(id);
+        if (!entries) return;
+        itemCount += entries.length;
+        entries.forEach((detail) => {
+          planned += detail.item.plannedAmount;
+          actual += detail.actual;
+        });
+      });
+      summaries.set(category.id, {
+        planned,
+        actual,
+        variance: planned - actual,
+        itemCount
+      });
+    });
+
+    return { itemsByCategory: byCategory, categorySummaries: summaries };
+  }, [plannedExpenseDetails, expenseCategories, expenseDescendantsMap]);
+
+  const uncategorisedDetails = useMemo(
+    () => plannedExpenseDetails.filter((detail) => !expenseCategoryIds.has(detail.item.categoryId)),
+    [plannedExpenseDetails, expenseCategoryIds]
   );
+
+  const overallSummary = useMemo(() => {
+    const planned = plannedExpenseDetails.reduce((sum, detail) => sum + detail.item.plannedAmount, 0);
+    const actual = plannedExpenseDetails.reduce((sum, detail) => sum + detail.actual, 0);
+    const variance = planned - actual;
+    const status: PlannedExpenseSpendingHealth =
+      plannedExpenseDetails.length === 0 || actual === 0
+        ? 'not-spent'
+        : variance >= 0
+        ? 'under'
+        : 'over';
+    return { planned, actual, variance, status };
+  }, [plannedExpenseDetails]);
+
+  const expandAllCategories = () => {
+    const next: Record<string, boolean> = {};
+    expenseCategories.forEach((category) => {
+      next[category.id] = true;
+    });
+    setExpandedCategories(next);
+  };
+
+  const collapseAllCategories = () => {
+    const next: Record<string, boolean> = {};
+    expenseCategories.forEach((category) => {
+      const parent = expenseCategories.find((candidate) => candidate.id === category.parentId);
+      const isRoot = !category.parentId || !parent;
+      next[category.id] = isRoot;
+    });
+    setExpandedCategories(next);
+  };
 
   const statusBadge = (status: PlannedExpenseItem['status']) => {
     const baseClass = 'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide';
@@ -236,6 +424,356 @@ export function SmartBudgetingView() {
     setFormState((prev) => ({ ...prev, categoryId: category.id }));
     setNewCategoryName('');
     setIsCreatingCategory(false);
+  };
+
+  const toggleCategory = (id: string) => {
+    setExpandedCategories((previous) => ({ ...previous, [id]: !previous[id] }));
+  };
+
+  const handleStartEdit = (detail: PlannedExpenseDetail) => {
+    setEditingItemId(detail.item.id);
+    const manualActual =
+      typeof detail.item.actualAmount === 'number' && !Number.isNaN(detail.item.actualAmount)
+        ? detail.item.actualAmount
+        : undefined;
+    setEditDraft({
+      categoryId: detail.item.categoryId,
+      plannedAmount: String(detail.item.plannedAmount),
+      actualAmount:
+        manualActual !== undefined
+          ? String(manualActual)
+          : detail.actual > 0
+          ? String(detail.actual)
+          : ''
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingItemId(null);
+    setEditDraft({ categoryId: '', plannedAmount: '', actualAmount: '' });
+  };
+
+  const handleSaveEdit = async (detail: PlannedExpenseDetail) => {
+    const plannedValue = Number(editDraft.plannedAmount);
+    const trimmedActual = editDraft.actualAmount.trim();
+    const actualValue = trimmedActual === '' ? undefined : Number(trimmedActual);
+    if (!editDraft.categoryId || Number.isNaN(plannedValue) || plannedValue < 0) {
+      return;
+    }
+    if (actualValue !== undefined && (Number.isNaN(actualValue) || actualValue < 0)) {
+      return;
+    }
+    setSavingItemId(detail.item.id);
+    try {
+      await updatePlannedExpense(detail.item.id, {
+        categoryId: editDraft.categoryId,
+        plannedAmount: plannedValue,
+        actualAmount: actualValue
+      });
+      setEditingItemId(null);
+      setEditDraft({ categoryId: '', plannedAmount: '', actualAmount: '' });
+    } finally {
+      setSavingItemId(null);
+    }
+  };
+
+  const renderItemCard = (detail: PlannedExpenseDetail, depth: number) => {
+    const isEditing = editingItemId === detail.item.id;
+    const isSaving = savingItemId === detail.item.id;
+    const categoryName =
+      categoryLookup.get(detail.item.categoryId)?.name ??
+      categories.find((cat) => cat.id === detail.item.categoryId)?.name ??
+      'Uncategorised';
+    const dueDateLabel = new Date(detail.item.dueDate).toLocaleDateString('en-IN', {
+      month: 'short',
+      day: 'numeric'
+    });
+    const progressPercentRaw =
+      detail.item.plannedAmount <= 0
+        ? detail.actual > 0
+          ? 100
+          : 0
+        : (detail.actual / detail.item.plannedAmount) * 100;
+    const progressPercent = Number.isFinite(progressPercentRaw) ? progressPercentRaw : 0;
+    const progressWidth = Math.max(0, Math.min(100, progressPercent));
+    const progressColor = progressColorByStatus[detail.status];
+    const varianceLabel = detail.variance >= 0 ? 'Saved' : 'Overspent';
+    const varianceDisplay = Math.abs(detail.variance);
+    const statusToken = spendingBadgeStyles[detail.status];
+    const actualToneClass = statusToken.toneClass;
+    const actualBackgroundClass =
+      detail.status === 'over'
+        ? 'bg-danger/10'
+        : detail.status === 'under'
+        ? 'bg-success/10'
+        : 'bg-slate-950/80';
+    const isCurrentCategoryMissing =
+      isEditing && editDraft.categoryId && !categoryOptions.some((option) => option.id === editDraft.categoryId);
+    const parsedPlanned = Number(editDraft.plannedAmount);
+    const parsedActual = editDraft.actualAmount.trim() === '' ? undefined : Number(editDraft.actualAmount);
+    const hasPlannedError = isEditing && (Number.isNaN(parsedPlanned) || parsedPlanned < 0);
+    const hasActualError = isEditing && parsedActual !== undefined && (Number.isNaN(parsedActual) || parsedActual < 0);
+    const isSaveDisabled =
+      !isEditing ||
+      !editDraft.categoryId ||
+      editDraft.plannedAmount.trim() === '' ||
+      hasPlannedError ||
+      hasActualError ||
+      isSaving;
+
+    return (
+      <article
+        key={detail.item.id}
+        className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm"
+        style={{ marginLeft: depth * 12 }}
+      >
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h4 className="text-base font-semibold text-slate-100">{detail.item.name}</h4>
+            <p className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+              {dueDateLabel}
+              {statusBadge(detail.item.status)}
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-1 text-xs">
+            <span className="font-semibold text-warning">{formatCurrency(detail.item.plannedAmount)}</span>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusToken.badgeClass}`}>
+              {statusToken.label}
+            </span>
+          </div>
+        </header>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3">
+            <p className="text-[11px] uppercase text-slate-500">Planned</p>
+            <p className="text-sm font-semibold text-warning">{formatCurrency(detail.item.plannedAmount)}</p>
+          </div>
+          <div className={`rounded-lg border border-slate-800 p-3 ${actualBackgroundClass}`}>
+            <p className="text-[11px] uppercase text-slate-500">Spent</p>
+            <p className={`text-sm font-semibold ${actualToneClass}`}>{formatCurrency(detail.actual)}</p>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+          <span className={`rounded-full px-2 py-0.5 font-semibold ${statusToken.badgeClass}`}>
+            {statusToken.label}
+          </span>
+          <span className={`rounded-full px-2 py-0.5 font-semibold ${detail.variance >= 0 ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'}`}>
+            {varianceLabel} {formatCurrency(varianceDisplay)}
+          </span>
+          <span className="rounded-full bg-slate-800 px-2 py-0.5 font-semibold text-slate-300">{categoryName}</span>
+        </div>
+
+        <div className="mt-3">
+          <div className="flex items-center justify-between text-[11px] text-slate-400">
+            <span>Utilisation</span>
+            <span>{Math.round(progressPercent)}%</span>
+          </div>
+          <div className="mt-1 h-2 rounded-full bg-slate-800">
+            <div className="h-2 rounded-full" style={{ width: `${progressWidth}%`, backgroundColor: progressColor }} />
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-[11px] text-slate-400">
+          {typeof detail.item.actualAmount === 'number' && !Number.isNaN(detail.item.actualAmount)
+            ? `Manual spend recorded: ${formatCurrency(detail.actual)}.`
+            : detail.match
+            ? `Matched with ${detail.match.description} on ${new Date(detail.match.date).toLocaleDateString('en-IN')}`
+            : 'No matching transaction yet — update spent once the payment is made.'}
+        </div>
+
+        {isEditing && (
+          <div className="mt-4 space-y-3 rounded-lg border border-slate-800 bg-slate-950/80 p-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label className="text-[11px] uppercase text-slate-500">Category</label>
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                  value={editDraft.categoryId}
+                  onChange={(event) => setEditDraft((prev) => ({ ...prev, categoryId: event.target.value }))}
+                >
+                  {isCurrentCategoryMissing && (
+                    <option value={detail.item.categoryId}>
+                      {categories.find((cat) => cat.id === detail.item.categoryId)?.name ?? 'Uncategorised'}
+                    </option>
+                  )}
+                  {categoryOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] uppercase text-slate-500">Planned (₹)</label>
+                <input
+                  type="number"
+                  min={0}
+                  className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                  value={editDraft.plannedAmount}
+                  onChange={(event) => setEditDraft((prev) => ({ ...prev, plannedAmount: event.target.value }))}
+                />
+                {hasPlannedError && <p className="mt-1 text-[10px] text-danger">Enter a valid planned amount.</p>}
+              </div>
+              <div>
+                <label className="text-[11px] uppercase text-slate-500">Spent (₹)</label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="Auto from transactions"
+                  className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                  value={editDraft.actualAmount}
+                  onChange={(event) => setEditDraft((prev) => ({ ...prev, actualAmount: event.target.value }))}
+                />
+                {hasActualError && <p className="mt-1 text-[10px] text-danger">Enter a valid spent amount.</p>}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSaveEdit(detail)}
+                disabled={isSaveDisabled}
+                className="rounded-lg bg-success px-4 py-2 text-xs font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSaving ? 'Saving…' : 'Save changes'}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                disabled={isSaving}
+                className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Leave the spent field blank to keep using the automatically matched transactions.
+            </p>
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-wrap gap-2 text-xs">
+          <button
+            type="button"
+            className="rounded-lg bg-success/20 px-3 py-1 font-semibold text-success"
+            onClick={() => updatePlannedExpense(detail.item.id, { status: 'purchased' })}
+          >
+            Mark purchased
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-slate-800 px-3 py-1 text-slate-300"
+            onClick={() => updatePlannedExpense(detail.item.id, { status: 'cancelled' })}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-sky-500/20 px-3 py-1 font-semibold text-sky-300"
+            onClick={() => updatePlannedExpense(detail.item.id, { status: 'reconciled' })}
+            disabled={detail.item.status === 'reconciled'}
+          >
+            Reconcile
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-danger/20 px-3 py-1 font-semibold text-danger"
+            onClick={() => deletePlannedExpense(detail.item.id)}
+          >
+            Delete
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-accent/20 px-3 py-1 font-semibold text-accent"
+            onClick={() => (isEditing ? handleCancelEdit() : handleStartEdit(detail))}
+            disabled={isSaving}
+          >
+            {isEditing ? 'Close editor' : 'Edit details'}
+          </button>
+        </div>
+      </article>
+    );
+  };
+
+  const renderCategorySection = (category: CategoryNode, depth = 0): JSX.Element | null => {
+    const summary = categorySummaries.get(category.id) ?? {
+      planned: 0,
+      actual: 0,
+      variance: 0,
+      itemCount: 0
+    };
+    const directItems = itemsByCategory.get(category.id) ?? [];
+    const hasChildrenContent = category.children.some(
+      (child) => (categorySummaries.get(child.id)?.itemCount ?? 0) > 0
+    );
+    if (directItems.length === 0 && !hasChildrenContent) {
+      return null;
+    }
+    const isExpanded = expandedCategories[category.id];
+    const categoryStatus: PlannedExpenseSpendingHealth =
+      summary.actual === 0 ? 'not-spent' : summary.variance >= 0 ? 'under' : 'over';
+    const statusToken = spendingBadgeStyles[categoryStatus];
+    const varianceLabel = summary.variance >= 0 ? 'Saved' : 'Overspent';
+    const varianceDisplay = Math.abs(summary.variance);
+    const progressPercentRaw =
+      summary.planned <= 0 ? (summary.actual > 0 ? 100 : 0) : (summary.actual / summary.planned) * 100;
+    const progressPercent = Number.isFinite(progressPercentRaw) ? progressPercentRaw : 0;
+    const progressWidth = Math.max(0, Math.min(100, progressPercent));
+    const progressColor = progressColorByStatus[categoryStatus];
+
+    return (
+      <div
+        key={category.id}
+        className="rounded-xl border border-slate-800 bg-slate-950/70 p-4"
+        style={{ marginLeft: depth * 12 }}
+      >
+        <button
+          type="button"
+          onClick={() => toggleCategory(category.id)}
+          aria-expanded={Boolean(isExpanded)}
+          className="flex w-full items-center justify-between gap-3 text-left"
+        >
+          <div className="flex items-center gap-3">
+            <span
+              aria-hidden
+              className={`text-lg text-slate-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+            >
+              ▸
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-slate-100">{category.name}</p>
+              <p className="text-[11px] text-slate-500">
+                {summary.itemCount} item{summary.itemCount === 1 ? '' : 's'} tracked
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-1 text-[11px] sm:flex-row sm:items-center sm:gap-3">
+            <span className="font-semibold text-warning">{formatCurrency(summary.planned)}</span>
+            <span className={`font-semibold ${summary.variance >= 0 ? 'text-success' : 'text-danger'}`}>
+              {varianceLabel} {formatCurrency(varianceDisplay)}
+            </span>
+            <span className={`rounded-full px-2 py-0.5 font-semibold ${statusToken.badgeClass}`}>
+              {statusToken.label}
+            </span>
+          </div>
+        </button>
+        <div className="mt-3">
+          <div className="flex items-center justify-between text-[11px] text-slate-400">
+            <span>Utilisation</span>
+            <span>{Math.round(progressPercent)}%</span>
+          </div>
+          <div className="mt-1 h-2 rounded-full bg-slate-800">
+            <div className="h-2 rounded-full" style={{ width: `${progressWidth}%`, backgroundColor: progressColor }} />
+          </div>
+        </div>
+        {isExpanded && (
+          <div className="mt-4 space-y-3 border-t border-slate-800 pt-4">
+            {directItems.map((detail) => renderItemCard(detail, depth + 1))}
+            {category.children.map((child) => renderCategorySection(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -489,63 +1027,75 @@ export function SmartBudgetingView() {
       </section>
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
-        <h3 className="text-lg font-semibold">Planned Expenses List</h3>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {reconciliations.map(({ item, match }) => (
-            <article key={item.id} className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm">
-              <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">Planned Expense Navigator</h3>
+            <p className="text-xs text-slate-500">
+              Drill into categories, spot overspending, and update plans without leaving this screen.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2">
+              <p className="font-semibold text-warning">Planned {formatCurrency(overallSummary.planned)}</p>
+              <p className={`font-semibold ${spendingBadgeStyles[overallSummary.status].toneClass}`}>
+                Actual {formatCurrency(overallSummary.actual)}
+              </p>
+              <p
+                className={`font-semibold ${
+                  overallSummary.variance >= 0 ? 'text-success' : 'text-danger'
+                }`}
+              >
+                {overallSummary.variance >= 0 ? 'Saved' : 'Overspent'}{' '}
+                {formatCurrency(Math.abs(overallSummary.variance))}
+              </p>
+            </div>
+            <span
+              className={`rounded-full px-2 py-0.5 font-semibold uppercase tracking-wide ${
+                spendingBadgeStyles[overallSummary.status].badgeClass
+              }`}
+            >
+              {spendingBadgeStyles[overallSummary.status].label}
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={expandAllCategories}
+                className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
+              >
+                Expand all
+              </button>
+              <button
+                type="button"
+                onClick={collapseAllCategories}
+                className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
+              >
+                Collapse all
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="mt-6 space-y-4">
+          {expenseCategoryTree.map((category) => renderCategorySection(category))}
+          {uncategorisedDetails.length > 0 && (
+            <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h4 className="text-base font-semibold text-slate-100">{item.name}</h4>
-                  <p className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                    {new Date(item.dueDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
-                    {statusBadge(item.status)}
+                  <h4 className="text-sm font-semibold text-slate-100">Uncategorised items</h4>
+                  <p className="text-[11px] text-slate-500">
+                    Assign a category so these expenses roll into the right budgets.
                   </p>
                 </div>
-                <span className="text-sm font-semibold text-warning">{formatCurrency(item.plannedAmount)}</span>
-              </header>
-              <p className="mt-2 text-xs text-slate-400">
-                Category: {categories.find((cat) => cat.id === item.categoryId)?.name ?? 'Uncategorised'}
-              </p>
-              <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-300">
-                {match
-                  ? `Matched with ${match.description} on ${new Date(match.date).toLocaleDateString('en-IN')}`
-                  : 'No matching transaction yet — keep an eye on the variance chart.'}
+                <span className="rounded-full bg-warning/20 px-2 py-0.5 text-[10px] font-semibold text-warning">
+                  {uncategorisedDetails.length} item{uncategorisedDetails.length === 1 ? '' : 's'}
+                </span>
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="rounded-lg bg-success/20 px-3 py-1 text-xs font-semibold text-success"
-                  onClick={() => updatePlannedExpense(item.id, { status: 'purchased' })}
-                >
-                  Mark purchased
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg bg-slate-800 px-3 py-1 text-xs text-slate-300"
-                  onClick={() => updatePlannedExpense(item.id, { status: 'cancelled' })}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg bg-sky-500/20 px-3 py-1 text-xs font-semibold text-sky-300"
-                  onClick={() => updatePlannedExpense(item.id, { status: 'reconciled' })}
-                  disabled={item.status === 'reconciled'}
-                >
-                  Reconcile
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg bg-danger/20 px-3 py-1 text-xs font-semibold text-danger"
-                  onClick={() => deletePlannedExpense(item.id)}
-                >
-                  Delete
-                </button>
+              <div className="mt-3 space-y-3">
+                {uncategorisedDetails.map((detail) => renderItemCard(detail, 0))}
               </div>
-            </article>
-          ))}
-          {plannedExpenses.length === 0 && (
-            <p className="text-sm text-slate-500 md:col-span-2 xl:col-span-3">No planned expenses yet.</p>
+            </div>
+          )}
+          {plannedExpenseDetails.length === 0 && (
+            <p className="text-sm text-slate-500">No planned expenses for the selected period yet.</p>
           )}
         </div>
       </section>
