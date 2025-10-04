@@ -58,11 +58,25 @@ export function SmartBudgetingView() {
 
   const generateEntryId = () => Math.random().toString(36).slice(2);
 
+  const resolveDefaultDueDate = () => {
+    try {
+      if (viewMode === 'monthly') {
+        return formatISO(parseISO(`${selectedMonth}-01`), { representation: 'date' });
+      }
+      if (viewMode === 'yearly') {
+        return formatISO(parseISO(`${selectedYear}-01-01`), { representation: 'date' });
+      }
+    } catch {
+      // Fall through to the generic fallback below when parsing fails.
+    }
+    return formatISO(addMonths(new Date(), 1), { representation: 'date' });
+  };
+
   const createEmptyEntry = (categoryId?: string): PlannedExpenseDraft => ({
     id: generateEntryId(),
     name: '',
     amount: '',
-    dueDate: formatISO(addMonths(new Date(), 1), { representation: 'date' }),
+    dueDate: resolveDefaultDueDate(),
     categoryId: categoryId ?? expenseCategories[0]?.id ?? ''
   });
 
