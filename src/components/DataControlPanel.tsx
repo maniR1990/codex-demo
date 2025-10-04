@@ -2,7 +2,11 @@ import { useRef, type ChangeEvent } from 'react';
 import { useFinancialStore } from '../store/FinancialStoreProvider';
 
 export function DataControlPanel() {
-  const { exportData, exportDataAsCsv, importData } = useFinancialStore();
+  const {
+    exportData,
+    exportDataAsCsv,
+    importData
+  } = useFinancialStore();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleExport = async () => {
@@ -40,7 +44,7 @@ export function DataControlPanel() {
     <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-sm">
       <h3 className="text-base font-semibold text-slate-100">Data governance & exports</h3>
       <p className="mt-1 text-xs text-slate-500">
-        Everything stays on your device: take local backups, download CSV ledgers, and restore data whenever you need it.
+        Everything stays local: save file-based backups, export your ledger, and restore data on any device.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <button
@@ -65,6 +69,13 @@ export function DataControlPanel() {
           Restore backup
         </button>
         <input ref={fileInputRef} type="file" accept="application/json" hidden onChange={onFileChange} />
+      </div>
+      <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-xs text-slate-400">
+        <p className="font-semibold text-slate-200">File-based backups</p>
+        <p>
+          Keep your financial data portable by exporting JSON or CSV files. Restore from a saved backup whenever you
+          need to sync another device.
+        </p>
       </div>
     </div>
   );
