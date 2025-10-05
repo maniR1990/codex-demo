@@ -273,6 +273,8 @@ export function SmartBudgetingView() {
     actualAmount: ''
   });
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  const [quickActualDrafts, setQuickActualDrafts] = useState<Record<string, string>>({});
+  const [quickActualSavingId, setQuickActualSavingId] = useState<string | null>(null);
   const [navigatorFilter, setNavigatorFilter] = useState<'all' | PlannedExpenseSpendingHealth>('all');
   const [categorySearchTerm, setCategorySearchTerm] = useState('');
   const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
@@ -729,6 +731,28 @@ export function SmartBudgetingView() {
     setEditDraft({ categoryId: '', plannedAmount: '', actualAmount: '' });
   };
 
+  const handleQuickActualChange = (id: string, value: string) => {
+    setQuickActualDrafts((previous) => ({ ...previous, [id]: value }));
+  };
+
+  const handleQuickActualSubmit = async (detail: PlannedExpenseDetail) => {
+    const rawValue = (quickActualDrafts[detail.item.id] ?? '').trim();
+    if (rawValue === '') {
+      return;
+    }
+    const numericValue = Number(rawValue);
+    if (Number.isNaN(numericValue) || numericValue < 0) {
+      return;
+    }
+    setQuickActualSavingId(detail.item.id);
+    try {
+      await updatePlannedExpense(detail.item.id, { actualAmount: numericValue });
+      setQuickActualDrafts((previous) => ({ ...previous, [detail.item.id]: '' }));
+    } finally {
+      setQuickActualSavingId(null);
+    }
+  };
+
   const handleSaveEdit = async (detail: PlannedExpenseDetail) => {
     const plannedValue = Number(editDraft.plannedAmount);
     const trimmedActual = editDraft.actualAmount.trim();
@@ -850,7 +874,6 @@ export function SmartBudgetingView() {
     const progressWidth = Math.max(0, Math.min(100, progressPercent));
     const progressColor = progressColorByStatus[detail.status];
     const varianceLabel = detail.variance >= 0 ? 'Saved' : 'Overspent';
-    const varianceDisplay = Math.abs(detail.variance);
     const statusToken = spendingBadgeStyles[detail.status];
     const actualToneClass = statusToken.toneClass;
     const actualBackgroundClass =
@@ -872,75 +895,60 @@ export function SmartBudgetingView() {
       hasPlannedError ||
       hasActualError ||
       isSaving;
+    const quickActualDraft = quickActualDrafts[detail.item.id] ?? '';
+    const quickActualTrimmed = quickActualDraft.trim();
+    const quickActualValue = quickActualTrimmed === '' ? undefined : Number(quickActualTrimmed);
+    const hasQuickActualError =
+      quickActualValue !== undefined && (Number.isNaN(quickActualValue) || quickActualValue < 0);
+    const isQuickSaving = quickActualSavingId === detail.item.id;
+    const quickPlaceholder =
+      typeof detail.item.actualAmount === 'number' && !Number.isNaN(detail.item.actualAmount)
+        ? String(detail.item.actualAmount)
+        : detail.actual > 0
+        ? String(detail.actual)
+        : '';
+    const infoMessage =
+      typeof detail.item.actualAmount === 'number' && !Number.isNaN(detail.item.actualAmount)
+        ? `Manual spend recorded: ${formatCurrency(detail.actual)}.`
+        : detail.match
+        ? `Matched with ${detail.match.description} on ${new Date(detail.match.date).toLocaleDateString('en-IN')}`
+        : 'No matching transaction yet — update spent once the payment is made.';
+    const remainderColor = detail.variance >= 0 ? 'text-success' : 'text-danger';
+
+    const handleSubmitQuickActual = (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!hasQuickActualError && quickActualValue !== undefined && !isQuickSaving) {
+        void handleQuickActualSubmit(detail);
+      }
+    };
 
     return (
-      <article
+      <div
         key={detail.item.id}
-        className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm"
-        style={{ marginLeft: depth * 12 }}
+        className={`border-t border-slate-800/60 ${isEditing ? 'bg-slate-950/35' : 'bg-slate-950/10 hover:bg-slate-900/30'}`}
       >
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h4 className="text-base font-semibold text-slate-100">{detail.item.name}</h4>
-            <p className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-              {dueDateLabel}
+        <div className="grid grid-cols-[minmax(0,3fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(160px,1fr)] items-start gap-4 px-4 py-2 text-xs sm:text-sm">
+          <div className="min-w-0 space-y-2" style={{ paddingLeft: depth * 16 }}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-sm font-semibold text-slate-100">{detail.item.name}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusToken.badgeClass}`}>
+                {statusToken.label}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+              <span>{dueDateLabel}</span>
               {statusBadge(detail.item.status)}
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-1 text-xs">
-            <span className="font-semibold text-warning">{formatCurrency(detail.item.plannedAmount)}</span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusToken.badgeClass}`}>
-              {statusToken.label}
-            </span>
-          </div>
-        </header>
-
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3">
-            <p className="text-[11px] uppercase text-slate-500">Planned</p>
-            <p className="text-sm font-semibold text-warning">{formatCurrency(detail.item.plannedAmount)}</p>
-          </div>
-          <div className={`rounded-lg border border-slate-800 p-3 ${actualBackgroundClass}`}>
-            <p className="text-[11px] uppercase text-slate-500">Spent</p>
-            <p className={`text-sm font-semibold ${actualToneClass}`}>{formatCurrency(detail.actual)}</p>
-          </div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
-          <span className={`rounded-full px-2 py-0.5 font-semibold ${statusToken.badgeClass}`}>
-            {statusToken.label}
-          </span>
-          <span className={`rounded-full px-2 py-0.5 font-semibold ${detail.variance >= 0 ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'}`}>
-            {varianceLabel} {formatCurrency(varianceDisplay)}
-          </span>
-          <span className="rounded-full bg-slate-800 px-2 py-0.5 font-semibold text-slate-300">{categoryName}</span>
-        </div>
-
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-[11px] text-slate-400">
-            <span>Utilisation</span>
-            <span>{Math.round(progressPercent)}%</span>
-          </div>
-          <div className="mt-1 h-2 rounded-full bg-slate-800">
-            <div className="h-2 rounded-full" style={{ width: `${progressWidth}%`, backgroundColor: progressColor }} />
-          </div>
-        </div>
-
-        <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-[11px] text-slate-400">
-          {typeof detail.item.actualAmount === 'number' && !Number.isNaN(detail.item.actualAmount)
-            ? `Manual spend recorded: ${formatCurrency(detail.actual)}.`
-            : detail.match
-            ? `Matched with ${detail.match.description} on ${new Date(detail.match.date).toLocaleDateString('en-IN')}`
-            : 'No matching transaction yet — update spent once the payment is made.'}
-        </div>
-
-        {isEditing && (
-          <div className="mt-4 space-y-3 rounded-lg border border-slate-800 bg-slate-950/80 p-3">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div>
-                <label className="text-[11px] uppercase text-slate-500">Category</label>
+              <span>{categoryName}</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+              <div className="h-full rounded-full" style={{ width: `${progressWidth}%`, backgroundColor: progressColor }} />
+            </div>
+            <p className="text-[10px] text-slate-500">{infoMessage}</p>
+            {isEditing && (
+              <div className="pt-1">
+                <label className="text-[10px] uppercase text-slate-500">Category</label>
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950/80 px-3 py-1.5 text-xs text-slate-100 focus:border-accent focus:outline-none"
                   value={editDraft.categoryId}
                   onChange={(event) => setEditDraft((prev) => ({ ...prev, categoryId: event.target.value }))}
                 >
@@ -956,94 +964,143 @@ export function SmartBudgetingView() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="text-[11px] uppercase text-slate-500">Planned (₹)</label>
+            )}
+          </div>
+          <div className="text-right">
+            {isEditing ? (
+              <div className="space-y-1">
                 <input
                   type="number"
                   min={0}
-                  className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                  className={`w-full rounded-md border bg-slate-950/80 px-3 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
+                    hasPlannedError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
+                  }`}
                   value={editDraft.plannedAmount}
                   onChange={(event) => setEditDraft((prev) => ({ ...prev, plannedAmount: event.target.value }))}
                 />
-                {hasPlannedError && <p className="mt-1 text-[10px] text-danger">Enter a valid planned amount.</p>}
+                {hasPlannedError && <p className="text-[10px] text-danger">Enter a valid planned amount.</p>}
               </div>
-              <div>
-                <label className="text-[11px] uppercase text-slate-500">Spent (₹)</label>
+            ) : (
+              <div className="space-y-1">
+                <div className="text-sm font-semibold text-warning">{formatCurrency(detail.item.plannedAmount)}</div>
+                <div className="text-[10px] text-slate-500">Planned</div>
+              </div>
+            )}
+          </div>
+          <div className="text-right">
+            {isEditing ? (
+              <div className="space-y-1">
                 <input
                   type="number"
                   min={0}
                   placeholder="Auto from transactions"
-                  className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                  className={`w-full rounded-md border bg-slate-950/80 px-3 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
+                    hasActualError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
+                  }`}
                   value={editDraft.actualAmount}
                   onChange={(event) => setEditDraft((prev) => ({ ...prev, actualAmount: event.target.value }))}
                 />
-                {hasActualError && <p className="mt-1 text-[10px] text-danger">Enter a valid spent amount.</p>}
+                {hasActualError && <p className="text-[10px] text-danger">Enter a valid spent amount.</p>}
               </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
+            ) : (
+              <div className={`space-y-1 rounded-md border border-slate-800/70 px-3 py-1.5 text-right ${actualBackgroundClass}`}>
+                <div className={`text-sm font-semibold ${actualToneClass}`}>{formatCurrency(detail.actual)}</div>
+                <div className="text-[10px] text-slate-500">Spent</div>
+              </div>
+            )}
+          </div>
+          <div className="text-right">
+            <div className={`text-sm font-semibold ${remainderColor}`}>{formatCurrency(detail.variance)}</div>
+            <div className="text-[10px] text-slate-500">{varianceLabel}</div>
+            <div className="text-[10px] text-slate-500">Utilisation {Math.round(progressPercent)}%</div>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            {!isEditing && (
+              <form className="flex w-full items-center justify-end gap-2" onSubmit={handleSubmitQuickActual}>
+                <input
+                  type="number"
+                  min={0}
+                  value={quickActualDraft}
+                  onChange={(event) => handleQuickActualChange(detail.item.id, event.target.value)}
+                  placeholder={quickPlaceholder || 'Spent'}
+                  className={`w-24 rounded-md border bg-slate-950/80 px-2 py-1 text-xs text-slate-100 focus:border-accent focus:outline-none ${
+                    hasQuickActualError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
+                  }`}
+                />
+                <button
+                  type="submit"
+                  disabled={hasQuickActualError || quickActualValue === undefined || isQuickSaving}
+                  className="rounded-md bg-accent px-2 py-1 text-[11px] font-semibold text-slate-900 transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isQuickSaving ? 'Saving…' : 'Save'}
+                </button>
+              </form>
+            )}
+            {hasQuickActualError && !isEditing && (
+              <p className="text-[10px] text-danger">Enter a valid amount to save.</p>
+            )}
+            <div className="flex flex-wrap justify-end gap-1 text-[10px]">
               <button
                 type="button"
-                onClick={() => void handleSaveEdit(detail)}
-                disabled={isSaveDisabled}
-                className="rounded-lg bg-success px-4 py-2 text-xs font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-full bg-success/15 px-2 py-1 font-semibold text-success hover:bg-success/25"
+                onClick={() => updatePlannedExpense(detail.item.id, { status: 'purchased' })}
               >
-                {isSaving ? 'Saving…' : 'Save changes'}
+                Purchased
               </button>
               <button
                 type="button"
-                onClick={handleCancelEdit}
-                disabled={isSaving}
-                className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-full bg-slate-800 px-2 py-1 text-slate-300 hover:bg-slate-700"
+                onClick={() => updatePlannedExpense(detail.item.id, { status: 'cancelled' })}
               >
                 Cancel
               </button>
+              <button
+                type="button"
+                className="rounded-full bg-sky-500/15 px-2 py-1 font-semibold text-sky-300 hover:bg-sky-500/25"
+                onClick={() => updatePlannedExpense(detail.item.id, { status: 'reconciled' })}
+                disabled={detail.item.status === 'reconciled'}
+              >
+                Reconcile
+              </button>
+              <button
+                type="button"
+                className="rounded-full bg-danger/15 px-2 py-1 font-semibold text-danger hover:bg-danger/25"
+                onClick={() => deletePlannedExpense(detail.item.id)}
+              >
+                Delete
+              </button>
             </div>
-            <p className="text-[11px] text-slate-500">
-              Leave the spent field blank to keep using the automatically matched transactions.
-            </p>
+            {isEditing ? (
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleSaveEdit(detail)}
+                  disabled={isSaveDisabled}
+                  className="rounded-md bg-success px-3 py-1 text-[11px] font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSaving ? 'Saving…' : 'Save changes'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  disabled={isSaving}
+                  className="rounded-md border border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-300 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleStartEdit(detail)}
+                className="text-[11px] font-semibold text-accent hover:text-accent/80"
+              >
+                Edit details
+              </button>
+            )}
           </div>
-        )}
-
-        <div className="mt-4 flex flex-wrap gap-2 text-xs">
-          <button
-            type="button"
-            className="rounded-lg bg-success/20 px-3 py-1 font-semibold text-success"
-            onClick={() => updatePlannedExpense(detail.item.id, { status: 'purchased' })}
-          >
-            Mark purchased
-          </button>
-          <button
-            type="button"
-            className="rounded-lg bg-slate-800 px-3 py-1 text-slate-300"
-            onClick={() => updatePlannedExpense(detail.item.id, { status: 'cancelled' })}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="rounded-lg bg-sky-500/20 px-3 py-1 font-semibold text-sky-300"
-            onClick={() => updatePlannedExpense(detail.item.id, { status: 'reconciled' })}
-            disabled={detail.item.status === 'reconciled'}
-          >
-            Reconcile
-          </button>
-          <button
-            type="button"
-            className="rounded-lg bg-danger/20 px-3 py-1 font-semibold text-danger"
-            onClick={() => deletePlannedExpense(detail.item.id)}
-          >
-            Delete
-          </button>
-          <button
-            type="button"
-            className="rounded-lg bg-accent/20 px-3 py-1 font-semibold text-accent"
-            onClick={() => (isEditing ? handleCancelEdit() : handleStartEdit(detail))}
-            disabled={isSaving}
-          >
-            {isEditing ? 'Close editor' : 'Edit details'}
-          </button>
         </div>
-      </article>
+      </div>
     );
   };
 
@@ -1120,12 +1177,14 @@ export function SmartBudgetingView() {
     const indentation = depth * 20;
 
     return (
-      <div key={category.id} className={`border-t border-slate-800 ${dimClass}`}>
+      <div key={category.id} className={dimClass}>
         <div
           onClick={() => focusCategory(category.id, true)}
-          className={`grid cursor-pointer grid-cols-[minmax(0,3fr)_minmax(140px,1fr)_minmax(140px,1fr)_minmax(160px,1fr)] items-center gap-4 px-4 py-3 text-sm transition hover:bg-slate-900/50 ${focusClass}`}
+          className={`grid cursor-pointer grid-cols-[minmax(0,3fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(160px,1fr)] items-center gap-4 border-t border-slate-800/70 px-4 py-3 text-xs sm:text-sm transition ${
+            isFocused ? 'bg-slate-900/60 ring-1 ring-inset ring-accent/40' : 'bg-slate-950/20 hover:bg-slate-900/35'
+          }`}
         >
-          <div className="flex items-center gap-3" style={{ paddingLeft: indentation }}>
+          <div className="flex min-w-0 items-center gap-3" style={{ paddingLeft: indentation }}>
             <button
               type="button"
               onClick={(event) => {
@@ -1134,45 +1193,47 @@ export function SmartBudgetingView() {
               }}
               aria-expanded={Boolean(isExpanded)}
               aria-disabled={!canExpand}
-              className={`flex h-6 w-6 items-center justify-center rounded-md border border-slate-700 bg-slate-900/60 text-slate-400 transition ${
-                canExpand ? 'hover:border-accent hover:text-accent' : 'cursor-default opacity-50'
+              className={`flex h-6 w-6 items-center justify-center rounded-md border border-slate-700 bg-slate-950/60 text-slate-400 transition ${
+                canExpand ? 'hover:border-accent hover:text-accent' : 'cursor-default opacity-40'
               }`}
             >
               <span aria-hidden className={`text-sm transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
                 {canExpand ? '▸' : '•'}
               </span>
             </button>
-            <div className="flex flex-col gap-1">
+            <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm font-semibold text-slate-100">{category.name}</p>
+                <p className="truncate text-sm font-semibold text-slate-100">{category.name}</p>
                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusToken.badgeClass}`}>
                   {statusToken.label}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500">
-                {summary.itemCount} planned item{summary.itemCount === 1 ? '' : 's'}
-                {nextDueLabel ? ` • Next due ${nextDueLabel}` : ''}
-              </p>
+              <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                <span>
+                  {summary.itemCount} planned item{summary.itemCount === 1 ? '' : 's'}
+                </span>
+                {nextDueLabel && <span>Next due {nextDueLabel}</span>}
+              </div>
             </div>
           </div>
-          <div className="text-right text-sm font-semibold text-warning">
-            {formatCurrency(summary.planned)}
+          <div className="text-right text-sm font-semibold text-warning">{formatCurrency(summary.planned)}</div>
+          <div className="text-right text-sm font-semibold text-slate-200">{formatCurrency(summary.actual)}</div>
+          <div className="text-right">
+            <div className={`text-sm font-semibold ${remainderClass}`}>{formatCurrency(summary.variance)}</div>
+            <div className="text-[10px] text-slate-500">{remainderDescriptor}</div>
           </div>
-          <div className="text-right text-sm font-semibold text-slate-200">
-            {formatCurrency(summary.actual)}
-          </div>
-          <div className={`text-right text-sm font-semibold ${remainderClass}`}>
-            <div>{formatCurrency(summary.variance)}</div>
-            <span className="block text-[10px] font-semibold text-slate-400">{remainderDescriptor}</span>
+          <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] text-slate-500">
+            {nextDueLabel && (
+              <span className="rounded-full bg-slate-800/70 px-2 py-0.5 text-slate-300">Next {nextDueLabel}</span>
+            )}
+            {canExpand && (
+              <span className="text-slate-400">{isExpanded ? 'Collapse' : 'Expand'}</span>
+            )}
           </div>
         </div>
         {isExpanded && (
-          <div className="bg-slate-950/40">
-            {visibleDirectItems.length > 0 && (
-              <div className="space-y-3 border-t border-slate-800/60 px-4 py-3">
-                {visibleDirectItems.map((detail) => renderItemCard(detail, depth + 1))}
-              </div>
-            )}
+          <div className="bg-slate-950/10">
+            {visibleDirectItems.length > 0 && visibleDirectItems.map((detail) => renderItemCard(detail, depth + 1))}
             {childSections}
           </div>
         )}
@@ -1673,11 +1734,12 @@ export function SmartBudgetingView() {
           <div className="space-y-4">
             {renderedCategorySections.length > 0 && (
               <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/70">
-                <div className="grid grid-cols-[minmax(0,3fr)_minmax(140px,1fr)_minmax(140px,1fr)_minmax(160px,1fr)] items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                  <span>Category</span>
+                <div className="grid grid-cols-[minmax(0,3fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(160px,1fr)] items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  <span>Category / Item</span>
                   <span className="text-right">Planned</span>
                   <span className="text-right">Spent</span>
-                  <span className="text-right">Remainder</span>
+                  <span className="text-right">Variance</span>
+                  <span className="text-right">Actions</span>
                 </div>
                 <div>{renderedCategorySections}</div>
               </div>
