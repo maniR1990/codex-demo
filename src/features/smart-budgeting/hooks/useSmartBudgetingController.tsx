@@ -380,41 +380,12 @@ export function useSmartBudgetingController() {
     [transactions, viewMode, selectedMonth, selectedYear]
   );
 
-  const resolveCategoryIds = (categoryId: 'all' | string) => {
-    if (categoryId === 'all') return allExpenseIdsSet;
-    return expenseDescendantsMap.get(categoryId) ?? new Set<string>([categoryId]);
-  };
-
-  const computeTotals = (categoryId: 'all' | string) => {
-    const ids = resolveCategoryIds(categoryId);
-    const plannedItems = periodPlannedExpenses.filter((item) => ids.has(item.categoryId));
-    const plannedFromItems = plannedItems.reduce((sum, item) => sum + item.plannedAmount, 0);
-    const actualEntries = periodTransactions.filter((txn) => txn.categoryId && ids.has(txn.categoryId));
-    const actualTotal = actualEntries.reduce((sum, txn) => sum + Math.abs(txn.amount), 0);
-    const budgetTotal = Array.from(ids).reduce((sum, id) => {
-      const category = categoryLookup.get(id);
-      if (!category) return sum;
-      const budget = viewMode === 'monthly' ? category.budgets?.monthly : category.budgets?.yearly;
-      return sum + (budget ?? 0);
-    }, 0);
-    return {
-      plannedItems,
-      actualEntries,
-      plannedFromItems,
-      budgetTotal,
-      totalPlanned: plannedFromItems + budgetTotal,
-      actualTotal
-    };
-  };
-
-  const totalsForAll = useMemo(
-    () => computeTotals('all'),
-    [periodPlannedExpenses, periodTransactions, viewMode, categoryLookup, expenseDescendantsMap, allExpenseIdsSet]
-  );
-
-  const totalsForSelected = useMemo(
-    () => computeTotals(selectedCategoryId),
-    [selectedCategoryId, periodPlannedExpenses, periodTransactions, viewMode, categoryLookup, expenseDescendantsMap, allExpenseIdsSet]
+  const resolveCategoryIds = useCallback(
+    (categoryId: 'all' | string) => {
+      if (categoryId === 'all') return allExpenseIdsSet;
+      return expenseDescendantsMap.get(categoryId) ?? new Set<string>([categoryId]);
+    },
+    [allExpenseIdsSet, expenseDescendantsMap]
   );
 
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
@@ -521,6 +492,81 @@ export function useSmartBudgetingController() {
         return a.item.name.localeCompare(b.item.name);
       });
   }, [periodPlannedExpenses, periodTransactions]);
+
+  const plannedDetailsById = useMemo(
+    () => new Map(plannedExpenseDetails.map((detail) => [detail.item.id, detail])),
+    [plannedExpenseDetails]
+  );
+
+  const matchedTransactionIds = useMemo(
+    () =>
+      new Set(
+        plannedExpenseDetails
+          .map((detail) => detail.match?.id)
+          .filter((id): id is string => typeof id === 'string')
+      ),
+    [plannedExpenseDetails]
+  );
+
+  const computeTotals = useCallback(
+    (categoryId: 'all' | string) => {
+      const ids = resolveCategoryIds(categoryId);
+      const plannedItems = periodPlannedExpenses.filter((item) => ids.has(item.categoryId));
+      const plannedFromItems = plannedItems.reduce((sum, item) => sum + item.plannedAmount, 0);
+      const actualFromPlanned = plannedItems.reduce((sum, item) => {
+        const detail = plannedDetailsById.get(item.id);
+        if (detail) {
+          return sum + detail.actual;
+        }
+        const manualActual =
+          typeof item.actualAmount === 'number' && !Number.isNaN(item.actualAmount) ? item.actualAmount : 0;
+        if (manualActual > 0) {
+          return sum + manualActual;
+        }
+        const remainderOverride =
+          typeof item.remainderAmount === 'number' && !Number.isNaN(item.remainderAmount)
+            ? Math.max(item.remainderAmount, 0)
+            : null;
+        if (remainderOverride !== null) {
+          return sum + Math.max(item.plannedAmount - remainderOverride, 0);
+        }
+        return sum;
+      }, 0);
+      const actualEntries = periodTransactions.filter((txn) => txn.categoryId && ids.has(txn.categoryId));
+      const unmatchedActual = actualEntries.reduce(
+        (sum, txn) => (matchedTransactionIds.has(txn.id) ? sum : sum + Math.abs(txn.amount)),
+        0
+      );
+      const actualTotal = Math.max(0, actualFromPlanned + unmatchedActual);
+      const budgetTotal = Array.from(ids).reduce((sum, id) => {
+        const category = categoryLookup.get(id);
+        if (!category) return sum;
+        const budget = viewMode === 'monthly' ? category.budgets?.monthly : category.budgets?.yearly;
+        return sum + (budget ?? 0);
+      }, 0);
+      return {
+        plannedItems,
+        actualEntries,
+        plannedFromItems,
+        budgetTotal,
+        totalPlanned: plannedFromItems + budgetTotal,
+        actualTotal
+      };
+    },
+    [
+      resolveCategoryIds,
+      periodPlannedExpenses,
+      plannedDetailsById,
+      periodTransactions,
+      matchedTransactionIds,
+      categoryLookup,
+      viewMode
+    ]
+  );
+
+  const totalsForAll = useMemo(() => computeTotals('all'), [computeTotals]);
+
+  const totalsForSelected = useMemo(() => computeTotals(selectedCategoryId), [computeTotals, selectedCategoryId]);
 
   const expenseCategoryTree = useMemo<CategoryNode[]>(() => {
     const nodes = new Map<string, CategoryNode>();
