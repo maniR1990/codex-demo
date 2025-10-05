@@ -1,4 +1,3 @@
-import { Badge } from '../atoms/Badge';
 import { ProgressBar } from '../atoms/ProgressBar';
 import { SummaryStat } from '../molecules/SummaryStat';
 import type { SmartBudgetingController } from '../hooks/useSmartBudgetingController';
@@ -39,6 +38,18 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
       ? 0
       : Math.abs(Math.round((remaining / overallSummary.planned) * 100));
   const remainingDescriptor = remaining >= 0 ? 'left' : 'over';
+  const spentPercent =
+    overallSummary.planned <= 0
+      ? 0
+      : Math.max(0, Math.round((overallSummary.actual / overallSummary.planned) * 100));
+  const now = new Date();
+  const totalDaysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const pacePercent = Math.max(0, Math.min(100, Math.round((now.getDate() / totalDaysInMonth) * 100)));
+  const paceDelta = pacePercent - spentPercent;
+  const isUnderPace = paceDelta >= 0;
+  const paceMessage = isUnderPace
+    ? `You’re on track — spending ${paceDelta}% below your monthly pace!`
+    : `Heads up — spending ${Math.abs(paceDelta)}% above your monthly pace.`;
 
   return (
     <>
@@ -75,11 +86,33 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
             {overallStatusToken.label}
           </span>
         </div>
-        <dl className="mt-4 grid grid-cols-3 gap-3 text-[11px] text-slate-400">
-          <SummaryStat label="Planned" value={<span className="text-warning">{utils.formatCurrency(totalsForAll.plannedFromItems)}</span>} />
-          <SummaryStat label="Budgets" value={utils.formatCurrency(totalsForAll.budgetTotal)} />
-          <SummaryStat label="Actual" value={utils.formatCurrency(totalsForAll.actualTotal)} />
-        </dl>
+        <div className="mt-4 space-y-3 rounded-lg border border-slate-800/60 bg-slate-950/40 p-3 text-sm">
+          <div className="flex items-center justify-between text-slate-400">
+            <span>Planned</span>
+            <span className="font-semibold text-slate-100">
+              {utils.formatCurrency(overallSummary.planned)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-slate-400">
+            <span>Spent</span>
+            <span className="font-semibold text-slate-100">
+              {utils.formatCurrency(overallSummary.actual)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-slate-400">
+            <span>Remaining</span>
+            <span className="flex items-baseline gap-2">
+              <span className={`font-semibold ${remaining >= 0 ? 'text-success' : 'text-danger'}`}>
+                {utils.formatCurrency(remaining)}
+              </span>
+              <span className="text-xs text-slate-500">({remainingPercent}% {remainingDescriptor})</span>
+            </span>
+          </div>
+        </div>
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-300">
+          <span className="text-base leading-none">💬</span>
+          <p className="leading-relaxed">{paceMessage}</p>
+        </div>
         <div className="mt-4">
           <div className="flex items-center justify-between text-[10px] text-slate-500">
             <span>Utilisation</span>
