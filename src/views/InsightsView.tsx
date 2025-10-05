@@ -89,7 +89,7 @@ export function InsightsView() {
     const today = new Date();
     const nextRecurring = recurringExpenses
       .map((expense) => {
-        const scheduledDate = parseISO(expense.nextDueDate ?? expense.dueDate);
+        const scheduledDate = parseISO(expense.nextDueDate ?? expense.dueDate ?? expense.createdAt);
         return {
           ...expense,
           scheduledDate
@@ -125,8 +125,9 @@ export function InsightsView() {
     const totalPending = pendingExpenses.reduce((sum, item) => sum + item.plannedAmount, 0);
 
     const nextExpense = pendingExpenses
+      .filter((expense) => Boolean(expense.dueDate))
       .map((expense) => {
-        const scheduledDate = parseISO(expense.dueDate);
+        const scheduledDate = parseISO(expense.dueDate!);
         return {
           ...expense,
           scheduledDate

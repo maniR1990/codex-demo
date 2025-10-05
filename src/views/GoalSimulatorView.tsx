@@ -142,6 +142,7 @@ function GoalCreator() {
       plannedAmount: form.amount / 12,
       categoryId: category.id,
       dueDate: form.targetDate,
+      priority: 'medium',
       status: 'pending'
     });
     setForm((prev) => ({ ...prev, name: '', amount: 0 }));

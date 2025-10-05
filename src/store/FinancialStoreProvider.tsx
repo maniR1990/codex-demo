@@ -55,6 +55,13 @@ const sanitiseBudgets = (budgets?: Category['budgets']): Category['budgets'] | u
   return Object.keys(normalised).length ? normalised : undefined;
 };
 
+const normaliseOptionalNumber = (value: number | null | undefined): number | null => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return null;
+  }
+  return value;
+};
+
 interface InitialSetupPayload {
   currency: Profile['currency'];
   financialStartDate: string;
@@ -547,6 +554,9 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
       ...payload,
       id: crypto.randomUUID(),
       status: payload.status ?? 'pending',
+      priority: payload.priority ?? 'medium',
+      remainderAmount: normaliseOptionalNumber(payload.remainderAmount),
+      dueDate: payload.dueDate ?? null,
       createdAt: now,
       updatedAt: now
     };
@@ -565,6 +575,11 @@ export function FinancialStoreProvider({ children }: { children: ReactNode }) {
           ? {
               ...expense,
               ...payload,
+              ...(payload.priority === undefined ? {} : { priority: payload.priority ?? 'medium' }),
+              ...(payload.dueDate === undefined ? {} : { dueDate: payload.dueDate ?? null }),
+              ...(payload.remainderAmount === undefined
+                ? {}
+                : { remainderAmount: normaliseOptionalNumber(payload.remainderAmount) }),
               updatedAt: new Date().toISOString()
             }
           : expense

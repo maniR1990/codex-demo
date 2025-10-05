@@ -28,7 +28,10 @@ export function simulateWealthAccelerator(
   );
 
   const upcomingRecurring = recurringExpenses
-    .map((expense) => differenceInMonths(parseISO(expense.nextDueDate ?? expense.dueDate), new Date()))
+    .map((expense) => {
+      const referenceDate = expense.nextDueDate ?? expense.dueDate ?? expense.createdAt;
+      return differenceInMonths(parseISO(referenceDate), new Date());
+    })
     .filter((diff) => diff >= 0)
     .sort((a, b) => a - b)[0];
 
