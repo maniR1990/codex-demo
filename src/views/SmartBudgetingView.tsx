@@ -324,6 +324,7 @@ export function SmartBudgetingView() {
   const [navigatorFilter, setNavigatorFilter] = useState<'all' | PlannedExpenseSpendingHealth>('all');
   const [categorySearchTerm, setCategorySearchTerm] = useState('');
   const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
+  const [budgetDraft, setBudgetDraft] = useState('');
   const navigatorFilterOptions: Array<{ key: 'all' | PlannedExpenseSpendingHealth; label: string }> = [
     { key: 'all', label: 'All statuses' },
     { key: 'over', label: 'Overspending' },
