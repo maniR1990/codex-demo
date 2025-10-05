@@ -1435,6 +1435,7 @@ export function useSmartBudgetingController() {
       handleSummaryScopeChange,
       selectedCategoryLabel,
       totalsForSelected,
+      selectedCategoryStatus,
       selectedStatusToken,
       selectedCategoryVariance,
       hasNavigatorResults,
