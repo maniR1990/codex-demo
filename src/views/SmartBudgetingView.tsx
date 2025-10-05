@@ -54,8 +54,7 @@ export function SmartBudgetingView() {
     addPlannedExpense,
     updatePlannedExpense,
     deletePlannedExpense,
-    addCategory,
-    updateCategory
+    addCategory
   } = useFinancialStore();
   const now = new Date();
   const defaultMonth = format(now, 'yyyy-MM');
@@ -325,8 +324,6 @@ export function SmartBudgetingView() {
   const [navigatorFilter, setNavigatorFilter] = useState<'all' | PlannedExpenseSpendingHealth>('all');
   const [categorySearchTerm, setCategorySearchTerm] = useState('');
   const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
-  const [budgetDraft, setBudgetDraft] = useState('');
-  const [savingBudgetId, setSavingBudgetId] = useState<string | null>(null);
   const navigatorFilterOptions: Array<{ key: 'all' | PlannedExpenseSpendingHealth; label: string }> = [
     { key: 'all', label: 'All statuses' },
     { key: 'over', label: 'Overspending' },
@@ -558,15 +555,6 @@ export function SmartBudgetingView() {
     return list.sort((a, b) => a.summary.variance - b.summary.variance).slice(0, 3);
   }, [expenseCategories, categorySummaries]);
   const inspectorCategory = focusedCategoryId ? categoryLookup.get(focusedCategoryId) : undefined;
-  const inspectorSummary = focusedCategoryId ? categorySummaries.get(focusedCategoryId) : undefined;
-  const inspectorStatus: PlannedExpenseSpendingHealth | null = inspectorSummary
-    ? inspectorSummary.actual === 0
-      ? 'not-spent'
-      : inspectorSummary.variance >= 0
-      ? 'under'
-      : 'over'
-    : null;
-  const inspectorStatusToken = inspectorStatus ? spendingBadgeStyles[inspectorStatus] : null;
   const inspectorDetails = useMemo(() => {
     if (!focusedCategoryId) {
       return [] as PlannedExpenseDetail[];
@@ -584,9 +572,18 @@ export function SmartBudgetingView() {
     upcoming.sort((a, b) => new Date(a.item.dueDate).getTime() - new Date(b.item.dueDate).getTime());
     return upcoming.slice(0, 3);
   }, [inspectorDetails]);
-  const isBudgetDraftInvalid =
-    budgetDraft.trim() !== '' && (Number.isNaN(Number(budgetDraft)) || Number(budgetDraft) < 0);
-  const isSavingBudget = savingBudgetId === focusedCategoryId;
+  const inspectorInProgressItems = useMemo(() => {
+    const inProgress = inspectorDetails.filter(
+      (detail) => detail.item.status === 'pending' || detail.item.status === 'purchased'
+    );
+    inProgress.sort((a, b) => new Date(a.item.dueDate).getTime() - new Date(b.item.dueDate).getTime());
+    return inProgress.slice(0, 3);
+  }, [inspectorDetails]);
+  const inspectorCompletedItems = useMemo(() => {
+    const completed = inspectorDetails.filter((detail) => detail.item.status === 'reconciled');
+    completed.sort((a, b) => new Date(b.item.dueDate).getTime() - new Date(a.item.dueDate).getTime());
+    return completed.slice(0, 3);
+  }, [inspectorDetails]);
 
   const updateAllCategoryExpansion = (expanded: boolean) => {
     const next: Record<string, boolean> = {};
@@ -821,75 +818,6 @@ export function SmartBudgetingView() {
       setEditDraft({ categoryId: '', plannedAmount: '', actualAmount: '' });
     } finally {
       setSavingItemId(null);
-    }
-  };
-
-  const handleApplyActualToBudget = () => {
-    if (!inspectorSummary) return;
-    setBudgetDraft(String(Math.round(Math.max(inspectorSummary.actual, 0))));
-  };
-
-  const handleIncreaseBudgetByTenPercent = () => {
-    const baseValue =
-      budgetDraft.trim() === ''
-        ? Math.max(inspectorSummary?.planned ?? 0, 0)
-        : Number(budgetDraft);
-    if (Number.isNaN(baseValue)) {
-      return;
-    }
-    const increased = Math.round(baseValue * 1.1);
-    setBudgetDraft(String(increased));
-  };
-
-  const handleResetBudgetToPlan = () => {
-    if (!inspectorSummary) {
-      setBudgetDraft('');
-      return;
-    }
-    setBudgetDraft(String(Math.round(Math.max(inspectorSummary.planned, 0))));
-  };
-
-  const handleSaveBudget = async () => {
-    if (!focusedCategoryId || isBudgetDraftInvalid) {
-      return;
-    }
-    const category = categoryLookup.get(focusedCategoryId);
-    if (!category) {
-      return;
-    }
-    const trimmed = budgetDraft.trim();
-    const { monthly, yearly } = category.budgets ?? {};
-    let budgetsPayload: Category['budgets'] | undefined;
-    if (trimmed === '') {
-      budgetsPayload =
-        viewMode === 'monthly'
-          ? typeof yearly === 'number'
-            ? { yearly }
-            : undefined
-          : typeof monthly === 'number'
-          ? { monthly }
-          : undefined;
-    } else {
-      const numeric = Number(trimmed);
-      if (Number.isNaN(numeric) || numeric < 0) {
-        return;
-      }
-      budgetsPayload =
-        viewMode === 'monthly'
-          ? {
-              monthly: numeric,
-              ...(typeof yearly === 'number' ? { yearly } : {})
-            }
-          : {
-              yearly: numeric,
-              ...(typeof monthly === 'number' ? { monthly } : {})
-            };
-    }
-    setSavingBudgetId(focusedCategoryId);
-    try {
-      await updateCategory(focusedCategoryId, { budgets: budgetsPayload });
-    } finally {
-      setSavingBudgetId(null);
     }
   };
 
@@ -1292,25 +1220,6 @@ export function SmartBudgetingView() {
     .map((category) => renderCategorySection(category))
     .filter((section): section is JSX.Element => section !== null);
   const hasNavigatorResults = renderedCategorySections.length > 0 || visibleUncategorisedDetails.length > 0;
-  const inspectorBreadcrumb = (() => {
-    if (!focusedCategoryId) return '';
-    const names: string[] = [];
-    const visited = new Set<string>();
-    let current: string | null = focusedCategoryId;
-    while (current) {
-      if (visited.has(current)) break;
-      visited.add(current);
-      const node = categoryLookup.get(current);
-      if (!node || node.type !== 'expense') {
-        break;
-      }
-      names.unshift(node.name);
-      const parent = categoryParentMap.get(current);
-      current = parent ?? null;
-    }
-    return names.join(' › ');
-  })();
-
   return (
     <div className="space-y-6">
       {isAddExpenseDialogOpen && (
@@ -1824,95 +1733,8 @@ export function SmartBudgetingView() {
             )}
           </div>
           <aside className="flex flex-col gap-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm">
-            <div>
-              <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Category workbench</h4>
-              {inspectorCategory ? (
-                <>
-                  <p className="mt-1 text-xs text-slate-500">{inspectorBreadcrumb}</p>
-                  {inspectorStatusToken && (
-                    <span
-                      className={`mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${inspectorStatusToken.badgeClass}`}
-                    >
-                      {inspectorStatusToken.label}
-                    </span>
-                  )}
-                </>
-              ) : (
-                <p className="mt-1 text-xs text-slate-500">Pick a category to see actionable insights.</p>
-              )}
-            </div>
             {inspectorCategory ? (
               <>
-                <div className="grid gap-3 text-[11px] sm:grid-cols-2">
-                  <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3">
-                    <p className="uppercase text-slate-500">Planned</p>
-                    <p className="text-sm font-semibold text-warning">
-                      {formatCurrency(inspectorSummary?.planned ?? 0)}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3">
-                    <p className="uppercase text-slate-500">Actual</p>
-                    <p className="text-sm font-semibold text-slate-200">
-                      {formatCurrency(inspectorSummary?.actual ?? 0)}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3 sm:col-span-2">
-                    <label className="text-[11px] uppercase text-slate-500">
-                      {viewMode === 'monthly' ? 'Monthly budget baseline' : 'Yearly budget baseline'}
-                    </label>
-                    <input
-                      value={budgetDraft}
-                      onChange={(event) => setBudgetDraft(event.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500"
-                      placeholder="Leave blank to clear"
-                    />
-                    {isBudgetDraftInvalid && (
-                      <p className="mt-1 text-[10px] text-danger">
-                        Enter a valid amount or leave blank to clear this baseline.
-                      </p>
-                    )}
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleApplyActualToBudget}
-                        className="rounded-lg border border-slate-700 px-3 py-1 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
-                      >
-                        Match actual
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleIncreaseBudgetByTenPercent}
-                        className="rounded-lg border border-slate-700 px-3 py-1 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
-                      >
-                        +10%
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleResetBudgetToPlan}
-                        className="rounded-lg border border-slate-700 px-3 py-1 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
-                      >
-                        Use planned total
-                      </button>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void handleSaveBudget()}
-                        disabled={isBudgetDraftInvalid || isSavingBudget}
-                        className="rounded-lg bg-success px-3 py-2 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isSavingBudget ? 'Saving…' : 'Save baseline'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBudgetDraft('')}
-                        className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-                </div>
                 <div>
                   <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Overspending watchlist</h5>
                   {inspectorOverspendingItems.length > 0 ? (
@@ -1980,10 +1802,76 @@ export function SmartBudgetingView() {
                     <p className="mt-2 text-xs text-slate-500">No upcoming items in this category.</p>
                   )}
                 </div>
+                <div>
+                  <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">In-progress items</h5>
+                  {inspectorInProgressItems.length > 0 ? (
+                    <ul className="mt-2 space-y-2">
+                      {inspectorInProgressItems.map((detail) => (
+                        <li
+                          key={detail.item.id}
+                          className="rounded-lg border border-slate-800 bg-slate-950/80 px-3 py-2 text-xs text-slate-300"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-slate-100">{detail.item.name}</span>
+                            {statusBadge(detail.item.status)}
+                          </div>
+                          <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                            <span>
+                              Due{' '}
+                              {new Date(detail.item.dueDate).toLocaleDateString('en-IN', {
+                                month: 'short',
+                                day: 'numeric'
+                              })}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleFocusDetail(detail)}
+                              className="font-semibold text-accent hover:underline"
+                            >
+                              Update
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">No items currently in progress.</p>
+                  )}
+                </div>
+                <div>
+                  <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Completed items</h5>
+                  {inspectorCompletedItems.length > 0 ? (
+                    <ul className="mt-2 space-y-2">
+                      {inspectorCompletedItems.map((detail) => (
+                        <li
+                          key={detail.item.id}
+                          className="rounded-lg border border-slate-800 bg-slate-950/80 px-3 py-2 text-xs text-slate-300"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-slate-100">{detail.item.name}</span>
+                            <span className="font-semibold text-success">{formatCurrency(detail.actual)}</span>
+                          </div>
+                          <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                            <span>Planned {formatCurrency(detail.item.plannedAmount)}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleFocusDetail(detail)}
+                              className="font-semibold text-accent hover:underline"
+                            >
+                              Review
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">No completed items recorded yet.</p>
+                  )}
+                </div>
               </>
             ) : (
               <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-500">
-                Choose a category on the left to review baselines, overspending, and upcoming expenses.
+                Choose a category on the left to review overspending, upcoming work, and progress.
               </div>
             )}
           </aside>
