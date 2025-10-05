@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { format, formatISO, parseISO } from 'date-fns';
+import { addMonths, format, formatISO, parseISO } from 'date-fns';
 import { useFinancialStore } from '../store/FinancialStoreProvider';
 import type { Category, PlannedExpenseItem, Transaction } from '../types';
 
@@ -70,6 +70,51 @@ export function SmartBudgetingView() {
   const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
   const [selectedYear, setSelectedYear] = useState(defaultYear);
   const [selectedCategoryId, setSelectedCategoryId] = useState<'all' | string>('all');
+  const periodLabel = useMemo(
+    () => (viewMode === 'monthly' ? formatMonthLabel(selectedMonth) : selectedYear),
+    [viewMode, selectedMonth, selectedYear]
+  );
+
+  const handleViewModeChange = (mode: 'monthly' | 'yearly') => {
+    if (mode === viewMode) {
+      return;
+    }
+    if (mode === 'yearly') {
+      const derivedYear = selectedMonth.slice(0, 4);
+      if (derivedYear) {
+        setSelectedYear(derivedYear);
+      }
+    }
+    setViewMode(mode);
+  };
+
+  const shiftPeriod = (direction: -1 | 1) => {
+    if (viewMode === 'monthly') {
+      try {
+        const baseDate = parseISO(`${selectedMonth}-01`);
+        if (Number.isNaN(baseDate.getTime())) {
+          throw new Error('Invalid month');
+        }
+        const nextDate = addMonths(baseDate, direction);
+        setSelectedMonth(format(nextDate, 'yyyy-MM'));
+      } catch {
+        const fallbackDate = addMonths(new Date(), direction);
+        setSelectedMonth(format(fallbackDate, 'yyyy-MM'));
+      }
+      return;
+    }
+
+    const safeYear = Number.parseInt(selectedYear, 10);
+    if (Number.isNaN(safeYear)) {
+      const fallbackYear = Number.parseInt(defaultYear, 10) + direction;
+      setSelectedYear(String(fallbackYear));
+      return;
+    }
+    setSelectedYear(String(safeYear + direction));
+  };
+
+  const goToPreviousPeriod = () => shiftPeriod(-1);
+  const goToNextPeriod = () => shiftPeriod(1);
 
   type PlannedExpenseDraft = {
     id: string;
@@ -109,6 +154,26 @@ export function SmartBudgetingView() {
   const [categoryCreationTargetId, setCategoryCreationTargetId] = useState<string | null>(null);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+
+  useEffect(() => {
+    if (viewMode === 'monthly') {
+      const derivedYear = selectedMonth.slice(0, 4);
+      if (derivedYear && derivedYear !== selectedYear) {
+        setSelectedYear(derivedYear);
+      }
+    }
+  }, [selectedMonth, selectedYear, viewMode]);
+
+  useEffect(() => {
+    if (viewMode === 'yearly') {
+      setSelectedMonth((previous) => {
+        const parts = previous.split('-');
+        const monthPart = parts[1] ? parts[1].padStart(2, '0') : format(new Date(), 'MM');
+        const nextValue = `${selectedYear}-${monthPart}`;
+        return nextValue === previous ? previous : nextValue;
+      });
+    }
+  }, [selectedYear, viewMode]);
 
   useEffect(() => {
     if (expenseCategories.length === 0) {
@@ -175,24 +240,6 @@ export function SmartBudgetingView() {
   }, [expenseCategories, categoryLookup]);
 
   const allExpenseIdsSet = useMemo(() => new Set(expenseCategories.map((category) => category.id)), [expenseCategories]);
-
-  const categoryMonthOptions = useMemo(() => {
-    const months = new Set<string>([selectedMonth, defaultMonth]);
-    plannedExpenses.forEach((item) => months.add(monthKey(item.dueDate)));
-    transactions
-      .filter((txn) => txn.amount < 0)
-      .forEach((txn) => months.add(monthKey(txn.date)));
-    return Array.from(months).sort((a, b) => (a > b ? -1 : 1));
-  }, [plannedExpenses, transactions, selectedMonth, defaultMonth]);
-
-  const categoryYearOptions = useMemo(() => {
-    const years = new Set<string>([selectedYear, defaultYear]);
-    plannedExpenses.forEach((item) => years.add(yearKey(item.dueDate)));
-    transactions
-      .filter((txn) => txn.amount < 0)
-      .forEach((txn) => years.add(yearKey(txn.date)));
-    return Array.from(years).sort((a, b) => (a > b ? -1 : 1));
-  }, [plannedExpenses, transactions, selectedYear, defaultYear]);
 
   const periodPlannedExpenses = useMemo(
     () =>
@@ -1461,11 +1508,80 @@ export function SmartBudgetingView() {
       </header>
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="text-lg font-semibold">Budget vs Actuals</h3>
-            <p className="text-xs text-slate-500">Including all planned variable expenses in the selected window</p>
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold">Budget vs Actuals</h3>
+              <p className="text-xs text-slate-500">Including all planned variable expenses in the selected window</p>
+            </div>
+
+            <div className="flex flex-col gap-3 text-xs text-slate-400">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <button
+                    type="button"
+                    onClick={goToPreviousPeriod}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800 bg-slate-950 text-lg text-slate-400 transition hover:border-slate-700 hover:text-slate-100"
+                    aria-label="Previous period"
+                  >
+                    ‹
+                  </button>
+                  <span className="text-base font-semibold text-slate-100 sm:text-lg">{periodLabel}</span>
+                  <button
+                    type="button"
+                    onClick={goToNextPeriod}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800 bg-slate-950 text-lg text-slate-400 transition hover:border-slate-700 hover:text-slate-100"
+                    aria-label="Next period"
+                  >
+                    ›
+                  </button>
+                </div>
+                <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-1 text-[11px] font-semibold sm:text-xs">
+                  <button
+                    type="button"
+                    onClick={() => handleViewModeChange('monthly')}
+                    className={`rounded-md px-3 py-1 transition ${
+                      viewMode === 'monthly'
+                        ? 'bg-accent text-slate-900'
+                        : 'text-slate-300 hover:text-slate-100'
+                    }`}
+                  >
+                    Monthly
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleViewModeChange('yearly')}
+                    className={`rounded-md px-3 py-1 transition ${
+                      viewMode === 'yearly'
+                        ? 'bg-accent text-slate-900'
+                        : 'text-slate-300 hover:text-slate-100'
+                    }`}
+                  >
+                    Yearly
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <select
+                  className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs font-medium text-slate-200 sm:text-sm"
+                  value={selectedCategoryId}
+                  onChange={(event) => setSelectedCategoryId(event.target.value as 'all' | string)}
+                >
+                  <option value="all">All categories</option>
+                  {expenseCategories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-300">
+                  Period: {periodLabel}
+                </span>
+              </div>
+            </div>
           </div>
+
           <div className="rounded-xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-sm">
             Planned: <span className="font-semibold text-warning">{formatCurrency(totalsForAll.totalPlanned)}</span>{' '}
             Actual: <span className="font-semibold text-danger">{formatCurrency(totalsForAll.actualTotal)}</span>{' '}
@@ -1478,67 +1594,6 @@ export function SmartBudgetingView() {
               {formatCurrency(totalsForAll.totalPlanned - totalsForAll.actualTotal)}
             </span>
           </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-400">
-          <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-1">
-            <button
-              type="button"
-              onClick={() => setViewMode('monthly')}
-              className={`rounded-md px-3 py-1 font-semibold ${
-                viewMode === 'monthly' ? 'bg-accent text-slate-900' : 'text-slate-300'
-              }`}
-            >
-              Monthly
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('yearly')}
-              className={`rounded-md px-3 py-1 font-semibold ${
-                viewMode === 'yearly' ? 'bg-accent text-slate-900' : 'text-slate-300'
-              }`}
-            >
-              Yearly
-            </button>
-          </div>
-          {viewMode === 'monthly' ? (
-            <select
-              className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
-              value={selectedMonth}
-              onChange={(event) => setSelectedMonth(event.target.value)}
-            >
-              {categoryMonthOptions.map((month) => (
-                <option key={month} value={month}>
-                  {formatMonthLabel(month)}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <select
-              className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
-              value={selectedYear}
-              onChange={(event) => setSelectedYear(event.target.value)}
-            >
-              {categoryYearOptions.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
-          )}
-          <select
-            className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
-            value={selectedCategoryId}
-            onChange={(event) => setSelectedCategoryId(event.target.value as 'all' | string)}
-          >
-            <option value="all">All categories</option>
-            {expenseCategories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </select>
-            <span className="text-slate-500">Period: {viewMode === 'monthly' ? formatMonthLabel(selectedMonth) : selectedYear}</span>
         </div>
 
         <div className="mt-4 flex justify-end">
