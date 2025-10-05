@@ -40,8 +40,6 @@ const PRIORITY_OPTIONS: Array<{ value: PlannedExpenseItem['priority']; label: st
   { value: 'low', label: 'Low priority' }
 ];
 
-const PRIORITY_ORDER: PlannedExpenseItem['priority'][] = ['high', 'medium', 'low'];
-
 const PRIORITY_TOKEN_STYLES: Record<PlannedExpenseItem['priority'], { label: string; badgeClass: string }> = {
   high: { label: 'High priority', badgeClass: 'bg-danger/20 text-danger' },
   medium: { label: 'Medium priority', badgeClass: 'bg-warning/20 text-warning' },
@@ -391,7 +389,6 @@ export function useSmartBudgetingController() {
   const [quickActualDrafts, setQuickActualDrafts] = useState<Record<string, string>>({});
   const [quickActualSavingId, setQuickActualSavingId] = useState<string | null>(null);
   const [navigatorFilter, setNavigatorFilter] = useState<'all' | PlannedExpenseSpendingHealth>('all');
-  const [navigatorView, setNavigatorView] = useState<'category' | 'priority'>('category');
   const [categorySearchTerm, setCategorySearchTerm] = useState('');
   const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
   const [focusedDetailId, setFocusedDetailId] = useState<string | null>(null);
@@ -405,11 +402,6 @@ export function useSmartBudgetingController() {
     { key: 'over', label: 'Overspending' },
     { key: 'under', label: 'Under budget' },
     { key: 'not-spent', label: 'Awaiting spend' }
-  ];
-
-  const navigatorViewOptions: Array<{ key: 'category' | 'priority'; label: string }> = [
-    { key: 'category', label: 'Category view' },
-    { key: 'priority', label: 'Priority view' }
   ];
 
   const normalisedSearchTerm = categorySearchTerm.trim().toLowerCase();
@@ -699,55 +691,6 @@ export function useSmartBudgetingController() {
     setBudgetDraft(typeof budgetValue === 'number' && !Number.isNaN(budgetValue) ? String(budgetValue) : '');
   }, [focusedCategoryId, categoryLookup, viewMode]);
 
-  const filteredPriorityDetails = useMemo(() => {
-    return plannedExpenseDetails.filter((detail) => {
-      if (activeCategoryIds && !activeCategoryIds.has(detail.item.categoryId)) {
-        return false;
-      }
-      const matchesFilter = navigatorFilter === 'all' || detail.status === navigatorFilter;
-      if (!matchesFilter) {
-        return false;
-      }
-      if (normalisedSearchTerm === '') {
-        return true;
-      }
-      const categoryName = categoryLookup.get(detail.item.categoryId)?.name?.toLowerCase() ?? 'uncategorised';
-      return (
-        detail.item.name.toLowerCase().includes(normalisedSearchTerm) || categoryName.includes(normalisedSearchTerm)
-      );
-    });
-  }, [
-    plannedExpenseDetails,
-    activeCategoryIds,
-    navigatorFilter,
-    normalisedSearchTerm,
-    categoryLookup
-  ]);
-
-  const priorityGroups = useMemo(() => {
-    const groups: Record<PlannedExpenseItem['priority'], PlannedExpenseDetail[]> = {
-      high: [],
-      medium: [],
-      low: []
-    };
-    const timeForDetail = (detail: PlannedExpenseDetail) =>
-      detail.item.dueDate ? new Date(detail.item.dueDate).getTime() : Number.POSITIVE_INFINITY;
-    filteredPriorityDetails.forEach((detail) => {
-      const priority = detail.priority ?? 'medium';
-      groups[priority].push(detail);
-    });
-    PRIORITY_ORDER.forEach((priority) => {
-      groups[priority].sort((a, b) => {
-        const dueComparison = timeForDetail(a) - timeForDetail(b);
-        if (dueComparison !== 0) {
-          return dueComparison;
-        }
-        return a.item.name.localeCompare(b.item.name);
-      });
-    });
-    return groups;
-  }, [filteredPriorityDetails]);
-
   const overallSummary = useMemo(() => {
     const planned = totalsForAll.totalPlanned;
     const actual = totalsForAll.actualTotal;
@@ -974,7 +917,6 @@ export function useSmartBudgetingController() {
 
   const handleResetFilters = () => {
     setNavigatorFilter('all');
-    setNavigatorView('category');
     setCategorySearchTerm('');
     setSelectedCategoryId('all');
   };
@@ -1151,7 +1093,6 @@ export function useSmartBudgetingController() {
   const handleFocusDetail = (detail: PlannedExpenseDetail) => {
     setNavigatorFilter('all');
     setCategorySearchTerm('');
-    setNavigatorView('category');
     setFocusedCategoryId(detail.item.categoryId);
     setFocusedDetailId(detail.item.id);
     if (activeCategoryIds && !activeCategoryIds.has(detail.item.categoryId)) {
@@ -1176,8 +1117,7 @@ export function useSmartBudgetingController() {
       : 'over';
   const selectedStatusToken = SPENDING_BADGE_STYLES[selectedCategoryStatus];
   const baselineLabel = viewMode === 'monthly' ? 'Monthly baseline (₹)' : 'Yearly baseline (₹)';
-  const hasNavigatorResults =
-    visibleNavigatorDetails.length > 0 || filteredPriorityDetails.length > 0;
+  const hasNavigatorResults = visibleNavigatorDetails.length > 0;
 
   const tableConfig = useMemo(
     () => ({
@@ -1319,8 +1259,8 @@ export function useSmartBudgetingController() {
       views: {
         smartBudgetingTable: {
           period: tablePeriod,
-          rows: plannedExpenseDetails.map((detail) => detail.item.id),
-          visibleDetailIds: plannedExpenseDetails.map((detail) => detail.item.id),
+          rows: visibleNavigatorDetails.map((detail) => detail.item.id),
+          visibleDetailIds: visibleNavigatorDetails.map((detail) => detail.item.id),
           rowMetadata: smartBudgetingRowMetadata,
           columnOrder: [...columnPreferences.order]
         }
@@ -1335,7 +1275,6 @@ export function useSmartBudgetingController() {
           },
           filters: {
             navigatorFilter,
-            navigatorView,
             searchTerm: categorySearchTerm,
             selectedCategoryId
           },
@@ -1376,9 +1315,9 @@ export function useSmartBudgetingController() {
     isAddExpenseDialogOpen,
     itemsByCategory,
     navigatorFilter,
-    navigatorView,
     plannedEntries,
     plannedExpenseDetails,
+    visibleNavigatorDetails,
     categoryLookup,
     quickActualDrafts,
     selectedCategoryId,
@@ -1443,14 +1382,9 @@ export function useSmartBudgetingController() {
       navigatorFilter,
       setNavigatorFilter,
       navigatorFilterOptions,
-      navigatorView,
-      setNavigatorView,
-      navigatorViewOptions,
       categorySearchTerm,
       setCategorySearchTerm,
       normalisedSearchTerm,
-      priorityGroups,
-      visibleCategoryDetails: plannedExpenseDetails,
       focusedCategoryId,
       setFocusedCategoryId,
       focusedDetailId,

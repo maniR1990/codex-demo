@@ -14,13 +14,7 @@ interface CategoryNavigatorProps {
 }
 
 export function CategoryNavigator({ categories, editing, table, utils }: CategoryNavigatorProps) {
-  const {
-    visibleNavigatorDetails,
-    navigatorView,
-    priorityGroups,
-    hasNavigatorResults,
-    focusedDetailId
-  } = categories;
+  const { visibleNavigatorDetails, hasNavigatorResults, focusedDetailId } = categories;
   const { visibleColumns, gridTemplateColumns } = table;
 
   const columnLabels: Record<SmartBudgetingColumnKey, string> = {
@@ -47,14 +41,14 @@ export function CategoryNavigator({ categories, editing, table, utils }: Categor
   const itemRefs = useRef(new Map<string, HTMLDivElement>());
 
   useEffect(() => {
-    if (navigatorView !== 'category' || !focusedDetailId) {
+    if (!focusedDetailId) {
       return;
     }
     const element = itemRefs.current.get(focusedDetailId);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, [focusedDetailId, navigatorView, visibleNavigatorDetails]);
+  }, [focusedDetailId, visibleNavigatorDetails]);
 
   const captureRowRef = (detailId: string) => (element: HTMLDivElement | null) => {
     if (element) {
@@ -106,40 +100,6 @@ export function CategoryNavigator({ categories, editing, table, utils }: Categor
     </div>
   );
 
-  const prioritySection = (
-    <div className="space-y-4">
-      {(['high', 'medium', 'low'] as const).map((priority) => {
-        const list = priorityGroups[priority];
-        return (
-          <div key={priority} className="rounded-lg border border-slate-800 bg-slate-950/50">
-            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3 text-xs text-slate-300">
-              <span className="font-semibold uppercase tracking-wide">{utils.PRIORITY_TOKEN_STYLES[priority].label}</span>
-              <span className="rounded-full bg-slate-800/60 px-2 py-0.5 text-[10px] text-slate-400">{list.length} items</span>
-            </div>
-            {list.length > 0 ? (
-              <div className="divide-y divide-slate-800">
-                {list.map((detail) => (
-                  <PlannedExpenseItemCard
-                    key={detail.item.id}
-                    detail={detail}
-                    depth={0}
-                    categories={categories}
-                    editing={editing}
-                    table={table}
-                    utils={utils}
-                    isFocused={focusedDetailId === detail.item.id}
-                  />
-                ))}
-              </div>
-            ) : (
-              <p className="px-4 py-3 text-xs text-slate-500">No items captured for this priority.</p>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-
   if (!hasNavigatorResults) {
     return (
       <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-6 text-center text-sm text-slate-500">
@@ -148,5 +108,5 @@ export function CategoryNavigator({ categories, editing, table, utils }: Categor
     );
   }
 
-  return <section className="space-y-4">{navigatorView === 'category' ? categoryView : prioritySection}</section>;
+  return <section>{categoryView}</section>;
 }
