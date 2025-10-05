@@ -34,8 +34,8 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
   } = categories;
 
   return (
-    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <article className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+    <>
+      <article className="flex h-full flex-col rounded-xl border border-slate-800 bg-slate-950/60 p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{summaryPeriodLabel} overview</p>
@@ -62,7 +62,7 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
         </div>
       </article>
 
-      <article className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+      <article className="flex h-full flex-col rounded-xl border border-slate-800 bg-slate-950/60 p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Summary scope</p>
@@ -114,10 +114,10 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
         )}
       </article>
 
-      <article className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+      <article className="flex h-full flex-col rounded-xl border border-slate-800 bg-slate-950/60 p-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Overspending hotspots</p>
         {overspendingCategories.length > 0 ? (
-          <ul className="mt-3 space-y-2 text-xs">
+          <ul className="mt-3 flex-1 space-y-2 overflow-y-auto pr-1 text-xs">
             {overspendingCategories.map(({ category, summary }) => (
               <li key={category.id} className="rounded-lg border border-danger/40 bg-danger/5 px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
@@ -146,7 +146,6 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
           <p className="mt-3 text-xs text-slate-500">No overspending recorded in this {summaryPeriodDescriptor}.</p>
         )}
       </article>
-
-    </section>
+    </>
   );
 }

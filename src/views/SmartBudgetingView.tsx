@@ -21,9 +21,10 @@ export function SmartBudgetingView() {
         onCollapseAll={categories.collapseAllCategories}
       />
 
-      <SummaryGrid overview={overview} categories={categories} utils={utils} />
-
-      <CategoryInspector inspector={inspector} utils={utils} />
+      <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+        <SummaryGrid overview={overview} categories={categories} utils={utils} />
+        <CategoryInspector inspector={inspector} utils={utils} />
+      </section>
 
       <NavigatorFilters categories={categories} />
 
