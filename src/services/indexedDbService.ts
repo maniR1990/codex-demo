@@ -11,10 +11,10 @@ import type {
   Transaction,
   WealthAcceleratorMetrics
 } from '../types';
-import { normaliseSnapshot } from '../utils/snapshotMerge';
+import { normaliseBudgetMonths, normaliseSnapshot } from '../utils/snapshotMerge';
 
 const DB_NAME = 'wealth-accelerator-db';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const SNAPSHOT_STORE = 'snapshots';
 
 const LEGACY_STORES = [
@@ -38,6 +38,18 @@ interface SnapshotRecord {
 type LegacyStoreName = (typeof LEGACY_STORES)[number];
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
+
+export async function resetIndexedDbConnectionForTests() {
+  if (dbPromise) {
+    try {
+      const db = await dbPromise;
+      db.close();
+    } catch (error) {
+      // ignore errors during cleanup in tests
+    }
+  }
+  dbPromise = null;
+}
 
 async function getDb() {
   if (!dbPromise) {
@@ -138,6 +150,10 @@ async function loadLegacySnapshot(): Promise<Partial<FinancialSnapshot> | null> 
     return null;
   }
 
+  const now = new Date().toISOString();
+  const baseCurrency = accounts.find((account) => account.currency)?.currency ?? 'INR';
+  const budgetMonths = normaliseBudgetMonths(undefined, plannedExpenses, baseCurrency, now);
+
   const metrics = wealthMetrics[0];
   return {
     profile: null,
@@ -146,6 +162,7 @@ async function loadLegacySnapshot(): Promise<Partial<FinancialSnapshot> | null> 
     transactions,
     monthlyIncomes,
     plannedExpenses,
+    budgetMonths,
     recurringExpenses,
     goals,
     insights,
@@ -154,13 +171,13 @@ async function loadLegacySnapshot(): Promise<Partial<FinancialSnapshot> | null> 
           capitalEfficiencyScore: metrics.capitalEfficiencyScore,
           opportunityCostAlerts: metrics.opportunityCostAlerts,
           insuranceGapAnalysis: metrics.insuranceGapAnalysis,
-          updatedAt: new Date().toISOString()
+          updatedAt: now
         }
       : undefined,
     smartExportRules: [],
     exportHistory: [],
     revision: 0,
-    lastLocalChangeAt: new Date().toISOString()
+    lastLocalChangeAt: now
   } satisfies Partial<FinancialSnapshot>;
 }
 
