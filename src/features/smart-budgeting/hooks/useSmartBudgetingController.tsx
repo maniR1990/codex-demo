@@ -603,19 +603,18 @@ export function useSmartBudgetingController() {
   }, [filteredPriorityDetails]);
 
   const overallSummary = useMemo(() => {
-    const planned = plannedExpenseDetails.reduce((sum, detail) => sum + detail.item.plannedAmount, 0);
-    const actual = plannedExpenseDetails.reduce((sum, detail) => sum + detail.actual, 0);
+    const planned = totalsForAll.totalPlanned;
+    const actual = totalsForAll.actualTotal;
     const variance = planned - actual;
     const status: PlannedExpenseSpendingHealth =
-      plannedExpenseDetails.length === 0 || actual === 0
-        ? 'not-spent'
-        : variance >= 0
-        ? 'under'
-        : 'over';
+      actual <= 0 ? 'not-spent' : variance >= 0 ? 'under' : 'over';
     return { planned, actual, variance, status };
-  }, [plannedExpenseDetails]);
+  }, [totalsForAll]);
 
-  const overallUtilisationPercent = overallSummary.planned <= 0 ? 0 : Math.round((overallSummary.actual / overallSummary.planned) * 100);
+  const overallUtilisationPercent =
+    overallSummary.planned <= 0
+      ? 0
+      : Math.round((overallSummary.actual / overallSummary.planned) * 100);
   const overallUtilisationWidth = Math.max(0, Math.min(100, overallUtilisationPercent));
 
   const overspendingCategories = useMemo(() => {
