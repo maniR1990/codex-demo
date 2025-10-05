@@ -30,9 +30,9 @@ export function CategoryNavigator({ categories, editing, table, utils }: Categor
   const headerAlignment: Record<SmartBudgetingColumnKey, string> = {
     category: 'text-left',
     item: 'text-left',
-    planned: 'text-right',
-    actual: 'text-right',
-    variance: 'text-right',
+    planned: 'justify-self-end text-right',
+    actual: 'justify-self-end text-right',
+    variance: 'justify-self-end text-right',
     due: 'text-left',
     status: 'text-left',
     priority: 'text-left'
@@ -81,7 +81,7 @@ export function CategoryNavigator({ categories, editing, table, utils }: Categor
             style={{ gridTemplateColumns }}
           >
             {visibleColumns.map((column) => (
-              <span key={`header-${column}`} className={column === 'category' ? '' : 'text-right'}>
+              <span key={`header-${column}`} className={`block ${headerAlignment[column]}`}>
                 {columnLabels[column]}
               </span>
             ))}
