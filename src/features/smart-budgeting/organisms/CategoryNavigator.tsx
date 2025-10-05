@@ -1,5 +1,5 @@
-import { Fragment } from 'react';
-import type { JSX } from 'react';
+import { Fragment, useCallback, useEffect, useRef } from 'react';
+import type { JSX, PointerEvent as ReactPointerEvent } from 'react';
 import { PlannedExpenseItemCard } from '../molecules/PlannedExpenseItemCard';
 import type {
   CategoryNode,
@@ -7,6 +7,7 @@ import type {
   SmartBudgetingColumnKey,
   SmartBudgetingController
 } from '../hooks/useSmartBudgetingController';
+import { SMART_BUDGETING_COLUMN_MIN_WIDTHS } from '../hooks/useSmartBudgetingController';
 
 const CalendarIcon = ({ className = 'h-4 w-4' }: { className?: string }): JSX.Element => (
   <svg viewBox="0 0 20 20" className={className} aria-hidden>
@@ -46,7 +47,69 @@ export function CategoryNavigator({ categories, editing, table, utils }: Categor
     hasNavigatorResults,
     renderedCategories
   } = categories;
-  const { visibleColumns, gridTemplateColumns } = table;
+  const { visibleColumns, gridTemplateColumns, setColumnWidth } = table;
+  const headerRefs = useRef<Partial<Record<SmartBudgetingColumnKey, HTMLDivElement | null>>>({});
+  const activeResizeRef = useRef<{ column: SmartBudgetingColumnKey; cleanup: () => void } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (activeResizeRef.current) {
+        activeResizeRef.current.cleanup();
+        activeResizeRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleResizeStart = useCallback(
+    (column: SmartBudgetingColumnKey, event: ReactPointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const headerElement = headerRefs.current[column];
+      if (!headerElement) {
+        return;
+      }
+
+      const startWidth = headerElement.getBoundingClientRect().width;
+      const startX = event.clientX;
+      const minWidth = SMART_BUDGETING_COLUMN_MIN_WIDTHS[column] ?? 120;
+
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        const delta = moveEvent.clientX - startX;
+        const nextWidth = Math.max(minWidth, Math.round(startWidth + delta));
+        setColumnWidth(column, nextWidth);
+      };
+
+      const handlePointerUp = () => {
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', handlePointerUp);
+        document.body.style.cursor = '';
+        activeResizeRef.current = null;
+      };
+
+      activeResizeRef.current?.cleanup();
+      document.body.style.cursor = 'col-resize';
+      window.addEventListener('pointermove', handlePointerMove);
+      window.addEventListener('pointerup', handlePointerUp, { once: true });
+      activeResizeRef.current = {
+        column,
+        cleanup: () => {
+          window.removeEventListener('pointermove', handlePointerMove);
+          window.removeEventListener('pointerup', handlePointerUp);
+          document.body.style.cursor = '';
+        }
+      };
+    },
+    [setColumnWidth]
+  );
+
+  const handleResetWidth = useCallback(
+    (column: SmartBudgetingColumnKey) => {
+      const defaultWidth = SMART_BUDGETING_COLUMN_MIN_WIDTHS[column] ?? 120;
+      setColumnWidth(column, defaultWidth);
+    },
+    [setColumnWidth]
+  );
   const columnLabels: Record<SmartBudgetingColumnKey, string> = {
     category: 'Category',
     item: 'Item',
@@ -358,11 +421,40 @@ export function CategoryNavigator({ categories, editing, table, utils }: Categor
                     className="grid items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400"
                     style={{ gridTemplateColumns }}
                   >
-                    {visibleColumns.map((column) => (
-                      <span key={`header-${column}`} className={headerAlignment[column] ?? 'text-left'}>
-                        {columnLabels[column]}
-                      </span>
-                    ))}
+                    {visibleColumns.map((column, index) => {
+                      const isLastColumn = index === visibleColumns.length - 1;
+                      return (
+                        <div
+                          key={`header-${column}`}
+                          ref={(node) => {
+                            if (node) {
+                              headerRefs.current[column] = node;
+                            } else {
+                              delete headerRefs.current[column];
+                            }
+                          }}
+                          onDoubleClick={() => handleResetWidth(column)}
+                          className={`group relative flex h-full items-center ${headerAlignment[column] ?? 'text-left'}`}
+                        >
+                          <span className="truncate pr-2">{columnLabels[column]}</span>
+                          {!isLastColumn && (
+                            <div
+                              role="separator"
+                              aria-orientation="vertical"
+                              aria-label={`Resize ${columnLabels[column]} column`}
+                              tabIndex={-1}
+                              onPointerDown={(event) => handleResizeStart(column, event)}
+                              className="absolute right-[-6px] top-0 h-full w-3 cursor-col-resize touch-none"
+                            >
+                              <span
+                                aria-hidden
+                                className="pointer-events-none absolute right-1 top-1/2 h-6 w-px -translate-y-1/2 rounded-full bg-slate-800 transition group-hover:bg-accent/60"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                   <div>{categorySections}</div>
                 </div>
