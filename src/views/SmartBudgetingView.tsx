@@ -649,6 +649,8 @@ export function SmartBudgetingView() {
         : 'over';
     return { planned, actual, variance, status };
   }, [plannedExpenseDetails]);
+  const overallUtilisationPercent = overallSummary.planned <= 0 ? 0 : Math.round((overallSummary.actual / overallSummary.planned) * 100);
+  const overallUtilisationWidth = Math.max(0, Math.min(100, overallUtilisationPercent));
 
   const overspendingCategories = useMemo(() => {
     const list: Array<{
@@ -1079,25 +1081,29 @@ export function SmartBudgetingView() {
       }
     };
 
+    const rowClass =
+      'group/row grid grid-cols-[minmax(0,2.6fr)_minmax(110px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(220px,1fr)] items-start gap-4 border-t border-slate-800/60 px-4 py-3 text-[11px] sm:text-xs transition';
+    const rowStateClass = isEditing ? 'bg-slate-950/60 ring-1 ring-inset ring-accent/40' : 'bg-slate-950/25 hover:bg-slate-900/55';
+
     return (
-      <div
-        key={detail.item.id}
-        className={`border-t border-slate-800/60 ${isEditing ? 'bg-slate-950/35' : 'bg-slate-950/10 hover:bg-slate-900/30'}`}
-      >
-        <div className="grid grid-cols-[minmax(0,3fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(160px,1fr)] items-start gap-4 px-4 py-2 text-xs sm:text-sm">
-          <div className="min-w-0 space-y-2" style={{ paddingLeft: depth * 16 }}>
-            <div className="flex flex-wrap items-center gap-2">
+      <div key={detail.item.id} className={`${rowClass} ${rowStateClass}`}>
+        <div className="min-w-0 space-y-2" style={{ paddingLeft: depth * 20 }}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="truncate text-sm font-semibold text-slate-100">{detail.item.name}</span>
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusToken.badgeClass}`}>
                 {statusToken.label}
               </span>
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
-              <span>{dueDateLabel}</span>
-              {statusBadge(detail.item.status)}
-              <span>{categoryName}</span>
-            </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+            <span className="text-[10px] text-slate-500" title={categoryName}>
+              {categoryName}
+            </span>
+          </div>
+          <p className="truncate text-[10px] text-slate-500" title={infoMessage}>
+            {infoMessage}
+          </p>
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 w-full flex-1 overflow-hidden rounded-full bg-slate-800">
               <div className="h-full rounded-full" style={{ width: `${progressWidth}%`, backgroundColor: progressColor }} />
             </div>
             <p className="text-[10px] text-slate-500">{infoMessage}</p>
@@ -1210,60 +1216,155 @@ export function SmartBudgetingView() {
                 className="rounded-full bg-success/15 px-2 py-1 font-semibold text-success hover:bg-success/25"
                 onClick={() => updatePlannedExpense(detail.item.id, { status: 'purchased' })}
               >
-                Purchased
+                {isCurrentCategoryMissing && (
+                  <option value={detail.item.categoryId}>
+                    {categories.find((cat) => cat.id === detail.item.categoryId)?.name ?? 'Uncategorised'}
+                  </option>
+                )}
+                {categoryOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col justify-center gap-1 text-xs text-slate-300">
+          <span className="text-sm font-semibold text-slate-100">{dueDateLabel}</span>
+          <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500">{statusBadge(detail.item.status)}</div>
+        </div>
+        <div className="text-right">
+          {isEditing ? (
+            <div className="space-y-1">
+              <input
+                type="number"
+                min={0}
+                className={`w-full rounded-md border bg-slate-950/80 px-3 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
+                  hasPlannedError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
+                }`}
+                value={editDraft.plannedAmount}
+                onChange={(event) => setEditDraft((prev) => ({ ...prev, plannedAmount: event.target.value }))}
+              />
+              {hasPlannedError && <p className="text-[10px] text-danger">Enter a valid planned amount.</p>}
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <div className="text-sm font-semibold text-warning">{formatCurrency(detail.item.plannedAmount)}</div>
+              <div className="text-[10px] text-slate-500">Planned</div>
+            </div>
+          )}
+        </div>
+        <div className="text-right">
+          {isEditing ? (
+            <div className="space-y-1">
+              <input
+                type="number"
+                min={0}
+                placeholder="Auto from transactions"
+                className={`w-full rounded-md border bg-slate-950/80 px-3 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
+                  hasActualError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
+                }`}
+                value={editDraft.actualAmount}
+                onChange={(event) => setEditDraft((prev) => ({ ...prev, actualAmount: event.target.value }))}
+              />
+              {hasActualError && <p className="text-[10px] text-danger">Enter a valid spent amount.</p>}
+            </div>
+          ) : (
+            <div className={`space-y-1 rounded-md border border-slate-800/70 px-3 py-1.5 text-right ${actualBackgroundClass}`}>
+              <div className={`text-sm font-semibold ${actualToneClass}`}>{formatCurrency(detail.actual)}</div>
+              <div className="text-[10px] text-slate-500">Spent</div>
+            </div>
+          )}
+        </div>
+        <div className="text-right">
+          <div className={`text-sm font-semibold ${remainderColor}`}>{formatCurrency(detail.variance)}</div>
+          <div className="text-[10px] text-slate-500">{varianceLabel}</div>
+        </div>
+        <div className="flex flex-col items-end gap-2 text-right">
+          {!isEditing && (
+            <form className="flex w-full items-center justify-end gap-2" onSubmit={handleSubmitQuickActual}>
+              <input
+                type="number"
+                min={0}
+                value={quickActualDraft}
+                onChange={(event) => handleQuickActualChange(detail.item.id, event.target.value)}
+                placeholder={quickPlaceholder || 'Spent'}
+                className={`w-24 rounded-md border bg-slate-950/80 px-2 py-1 text-xs text-slate-100 focus:border-accent focus:outline-none ${
+                  hasQuickActualError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
+                }`}
+              />
+              <button
+                type="submit"
+                disabled={hasQuickActualError || quickActualValue === undefined || isQuickSaving}
+                className="rounded-md bg-accent px-2 py-1 text-[11px] font-semibold text-slate-900 transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isQuickSaving ? 'Saving…' : 'Save'}
+              </button>
+            </form>
+          )}
+          {hasQuickActualError && !isEditing && (
+            <p className="text-[10px] text-danger">Enter a valid amount to save.</p>
+          )}
+          <div className="flex flex-wrap justify-end gap-1 text-[10px]">
+            <button
+              type="button"
+              className="rounded-full bg-success/15 px-2 py-1 font-semibold text-success hover:bg-success/25"
+              onClick={() => updatePlannedExpense(detail.item.id, { status: 'purchased' })}
+            >
+              Purchased
+            </button>
+            <button
+              type="button"
+              className="rounded-full bg-slate-800 px-2 py-1 text-slate-300 hover:bg-slate-700"
+              onClick={() => updatePlannedExpense(detail.item.id, { status: 'cancelled' })}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="rounded-full bg-sky-500/15 px-2 py-1 font-semibold text-sky-300 hover:bg-sky-500/25"
+              onClick={() => updatePlannedExpense(detail.item.id, { status: 'reconciled' })}
+              disabled={detail.item.status === 'reconciled'}
+            >
+              Reconcile
+            </button>
+            <button
+              type="button"
+              className="rounded-full bg-danger/15 px-2 py-1 font-semibold text-danger hover:bg-danger/25"
+              onClick={() => deletePlannedExpense(detail.item.id)}
+            >
+              Delete
+            </button>
+          </div>
+          {isEditing ? (
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSaveEdit(detail)}
+                disabled={isSaveDisabled}
+                className="rounded-md bg-success px-3 py-1 text-[11px] font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSaving ? 'Saving…' : 'Save changes'}
               </button>
               <button
                 type="button"
-                className="rounded-full bg-slate-800 px-2 py-1 text-slate-300 hover:bg-slate-700"
-                onClick={() => updatePlannedExpense(detail.item.id, { status: 'cancelled' })}
+                onClick={handleCancelEdit}
+                disabled={isSaving}
+                className="rounded-md border border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-300 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                className="rounded-full bg-sky-500/15 px-2 py-1 font-semibold text-sky-300 hover:bg-sky-500/25"
-                onClick={() => updatePlannedExpense(detail.item.id, { status: 'reconciled' })}
-                disabled={detail.item.status === 'reconciled'}
-              >
-                Reconcile
-              </button>
-              <button
-                type="button"
-                className="rounded-full bg-danger/15 px-2 py-1 font-semibold text-danger hover:bg-danger/25"
-                onClick={() => deletePlannedExpense(detail.item.id)}
-              >
-                Delete
-              </button>
             </div>
-            {isEditing ? (
-              <div className="flex flex-wrap justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => void handleSaveEdit(detail)}
-                  disabled={isSaveDisabled}
-                  className="rounded-md bg-success px-3 py-1 text-[11px] font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isSaving ? 'Saving…' : 'Save changes'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCancelEdit}
-                  disabled={isSaving}
-                  className="rounded-md border border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-300 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => handleStartEdit(detail)}
-                className="text-[11px] font-semibold text-accent hover:text-accent/80"
-              >
-                Edit details
-              </button>
-            )}
-          </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleStartEdit(detail)}
+              className="text-[11px] font-semibold text-accent hover:text-accent/80"
+            >
+              Edit details
+            </button>
+          )}
         </div>
       </div>
     );
@@ -1331,7 +1432,7 @@ export function SmartBudgetingView() {
     const shouldAutoExpand =
       normalisedSearchTerm !== '' && (matchesCategorySearch || hasVisibleItems || hasVisibleChildren);
     const isExpanded = canExpand && (shouldAutoExpand || Boolean(expandedCategories[category.id]));
-    const focusClass = isFocused ? 'bg-slate-900/70 ring-1 ring-inset ring-accent/40' : '';
+    const focusClass = isFocused ? 'bg-slate-900/60 ring-1 ring-inset ring-accent/40' : 'bg-slate-950/30 hover:bg-slate-900/50';
     const dimClass =
       normalisedSearchTerm !== '' && !matchesCategorySearch && !hasVisibleItems && !hasVisibleChildren
         ? 'opacity-70'
@@ -1348,9 +1449,7 @@ export function SmartBudgetingView() {
       <div key={category.id} className={dimClass}>
         <div
           onClick={() => focusCategory(category.id, true)}
-          className={`grid cursor-pointer grid-cols-[minmax(0,3fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(160px,1fr)] items-center gap-4 border-t border-slate-800/70 px-4 py-3 text-xs sm:text-sm transition ${
-            isFocused ? 'bg-slate-900/60 ring-1 ring-inset ring-accent/40' : 'bg-slate-950/20 hover:bg-slate-900/35'
-          }`}
+          className={`grid cursor-pointer grid-cols-[minmax(0,2.6fr)_minmax(110px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(220px,1fr)] items-center gap-4 border-t border-slate-800/70 px-4 py-3 text-[11px] sm:text-xs transition ${focusClass}`}
         >
           <div className="flex min-w-0 items-center gap-3" style={{ paddingLeft: indentation }}>
             <button
@@ -1384,23 +1483,27 @@ export function SmartBudgetingView() {
               </div>
             </div>
           </div>
+          <div className="space-y-1 text-xs text-slate-300">
+            <span className="text-sm font-semibold text-slate-100">{nextDueLabel ?? '—'}</span>
+            <span className="text-[10px] text-slate-500">
+              {nextDueLabel ? 'Earliest due' : 'No due dates'}
+            </span>
+          </div>
           <div className="text-right text-sm font-semibold text-warning">{formatCurrency(summary.planned)}</div>
           <div className="text-right text-sm font-semibold text-slate-200">{formatCurrency(summary.actual)}</div>
           <div className="text-right">
             <div className={`text-sm font-semibold ${remainderClass}`}>{formatCurrency(summary.variance)}</div>
             <div className="text-[10px] text-slate-500">{remainderDescriptor}</div>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] text-slate-500">
+          <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] text-slate-400">
             {nextDueLabel && (
               <span className="rounded-full bg-slate-800/70 px-2 py-0.5 text-slate-300">Next {nextDueLabel}</span>
             )}
-            {canExpand && (
-              <span className="text-slate-400">{isExpanded ? 'Collapse' : 'Expand'}</span>
-            )}
+            {canExpand && <span>{isExpanded ? 'Collapse' : 'Expand'}</span>}
           </div>
         </div>
         {isExpanded && (
-          <div className="bg-slate-950/10">
+          <div className="bg-slate-950/15">
             {visibleDirectItems.length > 0 && visibleDirectItems.map((detail) => renderItemCard(detail, depth + 1))}
             {childSections}
           </div>
@@ -1805,33 +1908,41 @@ export function SmartBudgetingView() {
       </section>
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="text-lg font-semibold">Planned Expense Navigator</h3>
-            <p className="text-xs text-slate-500">
-              Drill into categories, spot overspending, and update plans without leaving this screen.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-3 text-left">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500">Total planned</p>
-              <p className="text-lg font-semibold text-warning">{formatCurrency(overallSummary.planned)}</p>
+        <div className="space-y-6">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
+                <span className="rounded-full border border-slate-700/70 bg-slate-950/80 px-3 py-1 font-semibold text-accent">
+                  Navigator
+                </span>
+                <span className="rounded-full border border-slate-800/70 bg-slate-950/60 px-3 py-1 text-slate-400">
+                  High density view
+                </span>
+              </div>
+              <h3 className="text-xl font-semibold text-slate-100 sm:text-2xl">Planned Expense Navigator</h3>
+              <p className="max-w-2xl text-xs text-slate-400 sm:text-sm">
+                Drill into categories, spot overspending, and update plans without leaving this screen. Leverage the
+                quick filters and inline actions to keep your planned purchases on track.
+              </p>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-3 text-left">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500">Spent</p>
-              <p className="text-lg font-semibold text-slate-200">{formatCurrency(overallSummary.actual)}</p>
-            </div>
-            <div
-              className={`rounded-xl border px-4 py-3 text-left ${
-                overallSummary.variance >= 0
-                  ? 'border-success/40 bg-success/10'
-                  : 'border-danger/40 bg-danger/10'
-              }`}
-            >
-              <p className="text-[11px] uppercase tracking-wide text-slate-500">Balance</p>
-              <p
-                className={`text-lg font-semibold ${
-                  overallSummary.variance >= 0 ? 'text-success' : 'text-danger'
+            <div className="grid w-full max-w-xl grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+              <div className="rounded-xl border border-slate-800/80 bg-slate-950/80 p-3 text-left shadow-inner">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">Total planned</p>
+                <p className="mt-1 text-lg font-semibold text-warning">
+                  {formatCurrency(overallSummary.planned)}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-800/80 bg-slate-950/80 p-3 text-left shadow-inner">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">Spent</p>
+                <p className="mt-1 text-lg font-semibold text-slate-200">
+                  {formatCurrency(overallSummary.actual)}
+                </p>
+              </div>
+              <div
+                className={`rounded-xl border p-3 text-left shadow-inner ${
+                  overallSummary.variance >= 0
+                    ? 'border-success/40 bg-success/10'
+                    : 'border-danger/40 bg-danger/10'
                 }`}
               >
                 {formatCurrency(overallSummary.variance)}
@@ -1881,29 +1992,87 @@ export function SmartBudgetingView() {
                       : 'border-slate-700 text-slate-300 hover:border-accent hover:text-accent'
                   }`}
                 >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <div className="relative">
-              <input
-                value={categorySearchTerm}
-                onChange={(event) => setCategorySearchTerm(event.target.value)}
-                className="w-56 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 pr-8 text-sm text-slate-200 placeholder:text-slate-500"
-                placeholder="Search categories or items"
-              />
-              {categorySearchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setCategorySearchTerm('')}
-                  className="absolute inset-y-0 right-2 text-slate-500 hover:text-accent"
-                  aria-label="Clear search"
+                  {formatCurrency(overallSummary.variance)}
+                </p>
+                <span
+                  className={`mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                    spendingBadgeStyles[overallSummary.status].badgeClass
+                  }`}
                 >
-                  ×
-                </button>
-              )}
+                  {spendingBadgeStyles[overallSummary.status].label}
+                </span>
+              </div>
+              <div className="rounded-xl border border-slate-800/80 bg-slate-950/80 p-3 text-left shadow-inner">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">Plan utilisation</p>
+                <p className="mt-1 text-lg font-semibold text-slate-200">{overallUtilisationPercent}%</p>
+                <div className="mt-2 h-2 rounded-full bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-sky-400 via-accent to-warning"
+                    style={{ width: `${overallUtilisationWidth}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-[10px] text-slate-500">
+                  Spent {formatCurrency(overallSummary.actual)} of {formatCurrency(overallSummary.planned)}
+                </p>
+              </div>
+            </div>
+          </div>
+
+        <div className="rounded-xl border border-slate-800/60 bg-slate-950/50 p-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500">Quick filters</span>
+              {navigatorFilterOptions.map(({ key, label }) => {
+                const isActive = navigatorFilter === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setNavigatorFilter(key)}
+                    className={`rounded-full border px-3 py-1 font-semibold transition ${
+                      isActive
+                        ? 'border-accent bg-accent text-slate-900'
+                        : 'border-slate-700 text-slate-300 hover:border-accent hover:text-accent'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <div className="relative">
+                <input
+                  value={categorySearchTerm}
+                  onChange={(event) => setCategorySearchTerm(event.target.value)}
+                  className="w-56 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 pr-8 text-sm text-slate-200 placeholder:text-slate-500"
+                  placeholder="Search categories or items"
+                />
+                {categorySearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setCategorySearchTerm('')}
+                    className="absolute inset-y-0 right-2 text-slate-500 transition hover:text-accent"
+                    aria-label="Clear search"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={expandAllCategories}
+                className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
+              >
+                Expand all
+              </button>
+              <button
+                type="button"
+                onClick={collapseAllCategories}
+                className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
+              >
+                Collapse all
+              </button>
             </div>
             {navigatorView === 'category' && (
               <>
@@ -1927,8 +2096,8 @@ export function SmartBudgetingView() {
         </div>
 
         {overspendingCategories.length > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-[11px] uppercase tracking-wide text-slate-500">Hotspots:</span>
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-danger/30 bg-danger/5 px-3 py-2 text-xs">
+            <span className="text-[11px] uppercase tracking-wide text-danger/80">Overspending hotspots</span>
             {overspendingCategories.map(({ category, summary }) => (
               <button
                 key={category.id}
@@ -1938,7 +2107,7 @@ export function SmartBudgetingView() {
                   setCategorySearchTerm('');
                   focusCategory(category.id, true);
                 }}
-                className="inline-flex items-center gap-2 rounded-full border border-danger/40 bg-danger/10 px-3 py-1 font-semibold text-danger transition hover:border-danger/60"
+                className="inline-flex items-center gap-2 rounded-full border border-danger/50 bg-danger/10 px-3 py-1 font-semibold text-danger transition hover:border-danger/70"
               >
                 {category.name}
                 <span className="text-[10px] font-semibold text-danger/80">
@@ -1952,15 +2121,20 @@ export function SmartBudgetingView() {
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(260px,1fr)]">
           <div className="space-y-4">
             {renderedCategorySections.length > 0 && (
-              <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/70">
-                <div className="grid grid-cols-[minmax(0,3fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(160px,1fr)] items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                  <span>Category / Item</span>
-                  <span className="text-right">Planned</span>
-                  <span className="text-right">Spent</span>
-                  <span className="text-right">Variance</span>
-                  <span className="text-right">Actions</span>
+              <div className="overflow-hidden rounded-2xl border border-slate-800/70 bg-slate-950/40 shadow-inner">
+                <div className="overflow-x-auto">
+                  <div className="min-w-[980px] text-xs">
+                    <div className="grid grid-cols-[minmax(0,2.6fr)_minmax(110px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(220px,1fr)] items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                      <span className="text-left">Category / Item</span>
+                      <span>Due</span>
+                      <span className="text-right">Planned</span>
+                      <span className="text-right">Spent</span>
+                      <span className="text-right">Variance</span>
+                      <span className="text-right">Workflow</span>
+                    </div>
+                    <div>{renderedCategorySections}</div>
+                  </div>
                 </div>
-                <div>{renderedCategorySections}</div>
               </div>
             )}
             {visibleUncategorisedDetails.length > 0 && (
@@ -2176,6 +2350,7 @@ export function SmartBudgetingView() {
               </div>
             )}
           </aside>
+        </div>
         </div>
       </section>
     </div>
