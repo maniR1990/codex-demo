@@ -3,13 +3,9 @@ import type { SmartBudgetingController } from '../hooks/useSmartBudgetingControl
 
 interface SummaryHeaderControlsProps {
   period: SmartBudgetingController['period'];
-  table: SmartBudgetingController['table'];
-  onOpenDialog: () => void;
-  onExpandAll: () => void;
-  onCollapseAll: () => void;
 }
 
-export function SummaryHeaderControls({ period, table, onOpenDialog, onExpandAll, onCollapseAll }: SummaryHeaderControlsProps) {
+export function SummaryHeaderControls({ period }: SummaryHeaderControlsProps) {
   const {
     viewMode,
     handleViewModeChange,
@@ -22,15 +18,6 @@ export function SummaryHeaderControls({ period, table, onOpenDialog, onExpandAll
     handleMonthInputChange,
     handleYearInputChange
   } = period;
-  const columnLabels: Record<SmartBudgetingController['table']['columnPreferences']['order'][number], string> = {
-    category: 'Category / Planned items',
-    earliestDue: 'Earliest due date',
-    planned: 'Planned amount',
-    actual: 'Actual amount',
-    variance: 'Variance / remaining',
-    actions: 'Actions'
-  } as const;
-  const columnMenuId = useId();
   const monthInputId = useId();
   const yearInputId = useId();
   const monthInputRef = useRef<HTMLInputElement>(null);
@@ -102,169 +89,84 @@ export function SummaryHeaderControls({ period, table, onOpenDialog, onExpandAll
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 text-sm text-slate-200">
-            <button
-              type="button"
-              onClick={goToPreviousPeriod}
-              className="rounded-md border border-slate-700 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-accent"
-              aria-label="Previous period"
-            >
-              ‹
-            </button>
-            <div className="flex items-center gap-2 rounded-md border border-slate-800/70 bg-slate-900/40 px-2 py-1">
-              {viewMode === 'monthly' ? (
-                <>
-                  <input
-                    id={monthInputId}
-                    type="month"
-                    value={selectedMonth}
-                    onChange={(event) => handleMonthInputChange(event.target.value)}
-                    ref={monthInputRef}
-                    className="sr-only"
-                    aria-label="Select month"
-                  />
-                  <button
-                    type="button"
-                    onClick={openMonthPicker}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700/70 text-slate-300 transition hover:border-slate-500 hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
-                    aria-controls={monthInputId}
-                    aria-label="Open month picker"
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 text-sm text-slate-200">
+          <button
+            type="button"
+            onClick={goToPreviousPeriod}
+            className="rounded-md border border-slate-700 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-accent"
+            aria-label="Previous period"
+          >
+            ‹
+          </button>
+          <div className="flex items-center gap-2 rounded-md border border-slate-800/70 bg-slate-900/40 px-2 py-1">
+            {viewMode === 'monthly' ? (
+              <>
+                <input
+                  id={monthInputId}
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(event) => handleMonthInputChange(event.target.value)}
+                  ref={monthInputRef}
+                  className="sr-only"
+                  aria-label="Select month"
+                />
+                <button
+                  type="button"
+                  onClick={openMonthPicker}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700/70 text-slate-300 transition hover:border-slate-500 hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+                  aria-controls={monthInputId}
+                  aria-label="Open month picker"
+                >
+                  <svg
+                    aria-hidden="true"
+                    className="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    <svg
-                      aria-hidden="true"
-                      className="h-4 w-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <rect x="3" y="4" width="18" height="18" rx="2" />
-                      <path d="M16 2v4M8 2v4M3 10h18" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleOpenPeriodPicker}
-                    className="rounded-md px-3 py-1 text-sm font-semibold text-slate-100 transition hover:bg-slate-800/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
-                    aria-label="Select month"
-                  >
-                    {periodLabel}
-                  </button>
-                </>
-              ) : (
-                <label htmlFor={yearInputId} className="flex items-center gap-2 text-slate-200">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Year</span>
-                  <input
-                    id={yearInputId}
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={4}
-                    value={selectedYear}
-                    onChange={(event) => handleYearInputChange(event.target.value)}
-                    ref={yearInputRef}
-                    className="w-20 rounded-md border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-sm font-semibold text-slate-100 focus:border-accent focus:outline-none"
-                    aria-label="Select year"
-                  />
-                </label>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={goToNextPeriod}
-              className="rounded-md border border-slate-700 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-accent"
-              aria-label="Next period"
-            >
-              ›
-            </button>
+                    <rect x="3" y="4" width="18" height="18" rx="2" />
+                    <path d="M16 2v4M8 2v4M3 10h18" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenPeriodPicker}
+                  className="rounded-md px-3 py-1 text-sm font-semibold text-slate-100 transition hover:bg-slate-800/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+                  aria-label="Select month"
+                >
+                  {periodLabel}
+                </button>
+              </>
+            ) : (
+              <label htmlFor={yearInputId} className="flex items-center gap-2 text-slate-200">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Year</span>
+                <input
+                  id={yearInputId}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  value={selectedYear}
+                  onChange={(event) => handleYearInputChange(event.target.value)}
+                  ref={yearInputRef}
+                  className="w-20 rounded-md border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-sm font-semibold text-slate-100 focus:border-accent focus:outline-none"
+                  aria-label="Select year"
+                />
+              </label>
+            )}
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={onOpenDialog}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-accent/90"
+            onClick={goToNextPeriod}
+            className="rounded-md border border-slate-700 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-accent"
+            aria-label="Next period"
           >
-            + Plan expenses
+            ›
           </button>
-          <button
-            type="button"
-            onClick={onExpandAll}
-            aria-label="Expand all"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-slate-500 hover:text-accent"
-          >
-            <svg
-              aria-hidden="true"
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={onCollapseAll}
-            aria-label="Collapse all"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-slate-500 hover:text-accent"
-          >
-            <svg
-              aria-hidden="true"
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M5 12h14" />
-            </svg>
-          </button>
-          <details className="relative">
-            <summary
-              className="flex cursor-pointer list-none items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500"
-              aria-haspopup="menu"
-              aria-controls={columnMenuId}
-            >
-              Columns
-              <span aria-hidden className="text-[10px] text-slate-500">({table.visibleColumns.length})</span>
-            </summary>
-            <div
-              id={columnMenuId}
-              className="absolute right-0 z-10 mt-2 w-64 space-y-3 rounded-lg border border-slate-800 bg-slate-950/90 p-3 text-xs text-slate-200 shadow-xl shadow-slate-950/40"
-            >
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Visible columns</p>
-              <div className="space-y-2">
-                {table.columnPreferences.order.map((column) => (
-                  <label key={column} className="flex items-center justify-between gap-3 text-xs text-slate-200">
-                    <span>{columnLabels[column]}</span>
-                    <input
-                      type="checkbox"
-                      className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-accent focus:ring-accent"
-                      checked={table.columnPreferences.visible[column]}
-                      onChange={() => table.toggleColumnVisibility(column)}
-                    />
-                  </label>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={table.resetColumnPreferences}
-                className="w-full rounded-md border border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
-              >
-                Reset to default
-              </button>
-            </div>
-          </details>
         </div>
       </div>
     </header>
