@@ -33,6 +33,13 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
     focusCategory
   } = categories;
 
+  const remaining = overallSummary.planned - overallSummary.actual;
+  const remainingPercent =
+    overallSummary.planned <= 0
+      ? 0
+      : Math.abs(Math.round((remaining / overallSummary.planned) * 100));
+  const remainingDescriptor = remaining >= 0 ? 'left' : 'over';
+
   return (
     <>
       <article className="flex h-full flex-col rounded-xl border border-slate-800 bg-slate-950/60 p-4">
@@ -40,9 +47,29 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{summaryPeriodLabel} overview</p>
             <p className="mt-1 text-lg font-semibold text-slate-100">{periodLabel}</p>
-            <p className="mt-2 text-xs text-slate-400">
-              Planned {utils.formatCurrency(totalsForAll.totalPlanned)} · Spent {utils.formatCurrency(totalsForAll.actualTotal)}
-            </p>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+              <span>
+                Planned:{' '}
+                <span className="font-semibold text-slate-100">
+                  {utils.formatCurrency(overallSummary.planned)}
+                </span>
+              </span>
+              <span>
+                Spent:{' '}
+                <span className="font-semibold text-slate-100">
+                  {utils.formatCurrency(overallSummary.actual)}
+                </span>
+              </span>
+              <span>
+                Remaining:{' '}
+                <span className={`font-semibold ${remaining >= 0 ? 'text-success' : 'text-danger'}`}>
+                  {utils.formatCurrency(remaining)}
+                </span>{' '}
+                <span className="text-slate-500">
+                  ({remainingPercent}% {remainingDescriptor})
+                </span>
+              </span>
+            </div>
           </div>
           <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${overallStatusToken.badgeClass}`}>
             {overallStatusToken.label}
