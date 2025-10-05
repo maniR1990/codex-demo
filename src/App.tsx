@@ -85,7 +85,7 @@ export default function App() {
     </ErrorBoundary>
   );
 
-  const navigationItems = NAV_LINKS.map((link) => (
+  const navigationItems = NAV_LINKS.filter((link) => link.to !== '/income').map((link) => (
     <NavItem key={link.to} to={link.to} end={link.end} label={link.label} />
   ));
 
