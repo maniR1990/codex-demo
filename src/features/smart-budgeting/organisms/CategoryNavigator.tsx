@@ -15,12 +15,6 @@ const CalendarIcon = ({ className = 'h-4 w-4' }: { className?: string }): JSX.El
   </svg>
 );
 
-const ChevronDownIcon = ({ className = 'h-3.5 w-3.5' }: { className?: string }): JSX.Element => (
-  <svg viewBox="0 0 20 20" className={className} aria-hidden>
-    <path d="m5 7 5 5 5-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
-
 const ChevronRightIcon = ({ className = 'h-3.5 w-3.5' }: { className?: string }): JSX.Element => (
   <svg viewBox="0 0 20 20" className={className} aria-hidden>
     <path d="m7 5 5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
@@ -184,18 +178,7 @@ export function CategoryNavigator({ categories, editing, utils }: CategoryNaviga
               {remainderDescriptor}
             </span>
           </div>
-          <div className="flex items-center justify-end">
-            {canExpand && (
-              <span className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-700 bg-slate-900/50 text-slate-400">
-                {isExpanded ? (
-                  <ChevronDownIcon className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronRightIcon className="h-3.5 w-3.5" />
-                )}
-                <span className="sr-only">{isExpanded ? 'Collapse' : 'Expand'}</span>
-              </span>
-            )}
-          </div>
+          <div className="flex items-center justify-end" />
         </div>
         {isExpanded && (
           <div className="bg-slate-950/15">
@@ -291,11 +274,11 @@ export function CategoryNavigator({ categories, editing, utils }: CategoryNaviga
                 <div className="min-w-[980px] text-xs">
                   <div className="grid grid-cols-[minmax(0,2.6fr)_minmax(110px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(220px,1fr)] items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                     <span>Category / Planned items</span>
-                    <span>Earliest due</span>
-                    <span>Planned</span>
-                    <span>Actual</span>
-                    <span>Variance</span>
-                    <span>Actions</span>
+                    <span className="text-right">Earliest due</span>
+                    <span className="text-right">Planned</span>
+                    <span className="text-right">Actual</span>
+                    <span className="text-right">Variance</span>
+                    <span className="text-right">Actions</span>
                   </div>
                   <div>{categorySections}</div>
                 </div>

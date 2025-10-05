@@ -1,3 +1,4 @@
+import { formatISO } from 'date-fns';
 import { FormEvent } from 'react';
 import type {
   PlannedExpenseDetail,
@@ -54,6 +55,8 @@ export function PlannedExpenseItemCard({ detail, depth, categories, editing, uti
       : detail.status === 'under'
       ? 'bg-success/10'
       : 'bg-slate-950/80';
+  const fallbackDueDate =
+    detail.item.dueDate ?? formatISO(new Date(detail.item.createdAt), { representation: 'date' });
   const remainderValue = detail.remainder;
   const remainderLabel = remainderValue >= 0 ? 'Remaining' : 'Overspent';
   const remainderDisplay = Math.abs(remainderValue);
@@ -170,8 +173,50 @@ export function PlannedExpenseItemCard({ detail, depth, categories, editing, uti
         </div>
       </div>
 
-      <div className="flex flex-col justify-center gap-1 text-xs text-slate-300">
-        <span className="text-sm font-semibold text-slate-100">{dueDateLabel}</span>
+      <div className="flex flex-col justify-center gap-2 text-xs text-slate-300">
+        {isEditing ? (
+          <div className="space-y-2">
+            <span className="text-sm font-semibold text-slate-100">
+              {editDraft.hasDueDate && editDraft.dueDate
+                ? new Date(editDraft.dueDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+                : 'No due date'}
+            </span>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase text-slate-500">Due date</label>
+              <input
+                type="date"
+                className={`w-full rounded-md border bg-slate-950/80 px-3 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 ${
+                  requiresDueDate ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
+                }`}
+                value={editDraft.dueDate}
+                onChange={(event) => setEditDraft((prev) => ({ ...prev, dueDate: event.target.value }))}
+                disabled={!editDraft.hasDueDate || isSaving}
+              />
+            </div>
+            <label className="flex items-center gap-2 text-[10px] text-slate-400">
+              <input
+                type="checkbox"
+                className="h-3 w-3 rounded border-slate-600 bg-slate-900 text-accent focus:ring-accent"
+                checked={!editDraft.hasDueDate}
+                onChange={(event) => {
+                  const noDueDate = event.target.checked;
+                  setEditDraft((prev) => ({
+                    ...prev,
+                    hasDueDate: !noDueDate,
+                    dueDate: noDueDate ? '' : prev.dueDate || fallbackDueDate
+                  }));
+                }}
+                disabled={isSaving}
+              />
+              <span>No due date</span>
+            </label>
+            {requiresDueDate && (
+              <p className="text-[10px] text-danger">Select a due date or mark the item as having no due date.</p>
+            )}
+          </div>
+        ) : (
+          <span className="text-sm font-semibold text-slate-100">{dueDateLabel}</span>
+        )}
         <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500">{utils.statusBadge(detail.item.status)}</div>
       </div>
 
@@ -228,6 +273,26 @@ export function PlannedExpenseItemCard({ detail, depth, categories, editing, uti
       </div>
 
       <div className="flex flex-col items-end gap-2 text-right">
+        {isEditing && (
+          <div className="w-full space-y-1 text-right">
+            <label className="block text-[10px] uppercase text-slate-500">Remaining amount</label>
+            <input
+              type="number"
+              min={0}
+              placeholder="Leave blank to edit spent"
+              className={`w-full rounded-md border bg-slate-950/80 px-3 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
+                hasRemainderError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
+              }`}
+              value={editDraft.remainderAmount}
+              onChange={(event) => setEditDraft((prev) => ({ ...prev, remainderAmount: event.target.value }))}
+              disabled={isSaving}
+            />
+            <p className="text-[10px] text-slate-500">Leave empty to enter the spent amount manually.</p>
+            {hasRemainderError && (
+              <p className="text-[10px] text-danger">Enter a valid remaining amount or clear the field.</p>
+            )}
+          </div>
+        )}
         {!isEditing && (
           <form className="flex w-full items-center justify-end gap-2" onSubmit={handleSubmitQuickActual}>
             <input
