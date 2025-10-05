@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { useFinancialStore } from '../store/FinancialStoreProvider';
-import type { Category, PlannedExpenseItem, Transaction } from '../types';
+import type { BudgetAdjustment, Category, PlannedExpenseItem, Transaction } from '../types';
 
 const categoryTypes: Category['type'][] = ['income', 'expense', 'asset', 'liability'];
 
@@ -25,6 +25,7 @@ interface CategoryDraftForm {
 interface CategorySummary {
   transactions: Transaction[];
   plannedItems: PlannedExpenseItem[];
+  rolloverTotal: number;
 }
 
 function createBlankDraft(type: Category['type'] = 'income'): CategoryDraftForm {
@@ -101,7 +102,9 @@ export function IncomeManagementView() {
     monthlyIncomes,
     categories,
     transactions,
-    allBudgetedPlannedExpenses,
+    budgetMonthMap,
+    budgetMonthsList,
+    getBudgetMonth,
     addMonthlyIncome,
     updateMonthlyIncome,
     deleteMonthlyIncome,
@@ -172,16 +175,16 @@ export function IncomeManagementView() {
   const categoryMonthOptions = useMemo(() => {
     const months = new Set<string>([selectedCategoryMonth, defaultMonth]);
     transactions.forEach((txn) => months.add(monthKey(txn.date)));
-    allBudgetedPlannedExpenses.forEach((item) => months.add(monthKey(item.dueDate ?? item.createdAt)));
+    budgetMonthsList.forEach((month) => months.add(month.month));
     return Array.from(months).sort((a, b) => (a > b ? -1 : 1));
-  }, [transactions, allBudgetedPlannedExpenses, selectedCategoryMonth, defaultMonth]);
+  }, [transactions, budgetMonthsList, selectedCategoryMonth, defaultMonth]);
 
   const categoryYearOptions = useMemo(() => {
     const years = new Set<string>([selectedCategoryYear, defaultYear]);
     transactions.forEach((txn) => years.add(yearKey(txn.date)));
-    allBudgetedPlannedExpenses.forEach((item) => years.add(yearKey(item.dueDate ?? item.createdAt)));
+    budgetMonthsList.forEach((month) => years.add(yearKey(month.month)));
     return Array.from(years).sort((a, b) => (a > b ? -1 : 1));
-  }, [transactions, allBudgetedPlannedExpenses, selectedCategoryYear, defaultYear]);
+  }, [transactions, budgetMonthsList, selectedCategoryYear, defaultYear]);
 
   const filteredIncomes = useMemo(
     () =>
@@ -234,15 +237,45 @@ export function IncomeManagementView() {
     [transactions, categoryViewMode, selectedCategoryMonth, selectedCategoryYear]
   );
 
-  const relevantPlannedExpenses = useMemo(
-    () =>
-      allBudgetedPlannedExpenses.filter((item) =>
-        categoryViewMode === 'monthly'
-          ? monthKey(item.dueDate ?? item.createdAt) === selectedCategoryMonth
-          : yearKey(item.dueDate ?? item.createdAt) === selectedCategoryYear
-      ),
-    [allBudgetedPlannedExpenses, categoryViewMode, selectedCategoryMonth, selectedCategoryYear]
-  );
+  const relevantPlannedExpenses = useMemo(() => {
+    if (categoryViewMode === 'monthly') {
+      const month = budgetMonthMap[selectedCategoryMonth];
+      return Array.isArray(month?.plannedExpenses) ? month!.plannedExpenses : [];
+    }
+    const items: PlannedExpenseItem[] = [];
+    Object.values(budgetMonthMap).forEach((month) => {
+      if (!month) return;
+      if (yearKey(month.month) === selectedCategoryYear && Array.isArray(month.plannedExpenses)) {
+        items.push(...month.plannedExpenses);
+      }
+    });
+    return items;
+  }, [budgetMonthMap, categoryViewMode, selectedCategoryMonth, selectedCategoryYear]);
+
+  const relevantAdjustments = useMemo(() => {
+    const adjustments: BudgetAdjustment[] = [];
+    if (categoryViewMode === 'monthly') {
+      const month = getBudgetMonth(selectedCategoryMonth);
+      adjustments.push(...(month.adjustments ?? []));
+    } else {
+      budgetMonthsList.forEach((month) => {
+        if (yearKey(month.month) === selectedCategoryYear) {
+          const data = getBudgetMonth(month.month);
+          adjustments.push(...(data.adjustments ?? []));
+        }
+      });
+    }
+    return adjustments;
+  }, [categoryViewMode, selectedCategoryMonth, selectedCategoryYear, getBudgetMonth, budgetMonthsList]);
+
+  const categoryAdjustmentMap = useMemo(() => {
+    const map = new Map<string, number>();
+    relevantAdjustments.forEach((adjustment) => {
+      if (!adjustment.categoryId) return;
+      map.set(adjustment.categoryId, (map.get(adjustment.categoryId) ?? 0) + adjustment.amount);
+    });
+    return map;
+  }, [relevantAdjustments]);
 
   const transactionMap = useMemo(() => {
     const map = new Map<string, Transaction[]>();
@@ -271,6 +304,7 @@ export function IncomeManagementView() {
         const queue: CategoryNode[] = [node];
         const transactionsList: Transaction[] = [];
         const plannedList: PlannedExpenseItem[] = [];
+        let rolloverTotal = 0;
 
         while (queue.length > 0) {
           const current = queue.shift()!;
@@ -283,6 +317,8 @@ export function IncomeManagementView() {
           plannedItems.forEach((item) => {
             plannedList.push(item);
           });
+
+          rolloverTotal += categoryAdjustmentMap.get(current.category.id) ?? 0;
 
           queue.push(...current.children);
         }
@@ -304,10 +340,11 @@ export function IncomeManagementView() {
 
         return {
           transactions: transactionsList,
-          plannedItems: plannedList
+          plannedItems: plannedList,
+          rolloverTotal
         };
       },
-    [transactionMap, plannedMap]
+    [transactionMap, plannedMap, categoryAdjustmentMap]
   );
 
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
@@ -500,6 +537,11 @@ export function IncomeManagementView() {
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-slate-100">{node.category.name}</p>
                 <p className="text-xs uppercase tracking-wide text-slate-500">{node.category.type}</p>
+                {Math.abs(summary.rolloverTotal) > 0 && (
+                  <p className="text-[11px] text-warning">
+                    Rollover impact: {formatCurrency(summary.rolloverTotal)}
+                  </p>
+                )}
               </div>
             </div>
           </td>

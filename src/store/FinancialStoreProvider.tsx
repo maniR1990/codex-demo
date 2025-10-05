@@ -11,9 +11,14 @@ import {
 } from 'react';
 import type {
   Account,
+  BudgetActual,
+  BudgetAdjustment,
   BudgetMonth,
   BudgetMonthTotals,
+  BudgetPlannedItem,
+  BudgetRecurringAllocation,
   Category,
+  Currency,
   ExportEvent,
   FinancialSnapshot,
   FirebaseSyncConfig,
@@ -37,6 +42,7 @@ import { generateInsights } from '../services/insightsEngine';
 import { simulateWealthAccelerator } from '../services/wealthAcceleratorEngine';
 import { firebaseSyncService } from '../services/firebaseSyncService';
 import { mergeSnapshots, normaliseSnapshot } from '../utils/snapshotMerge';
+import { createDefaultBudgetMonth } from '../types';
 
 const STORAGE_KEYS = {
   firebase: 'wealth-accelerator-firebase-config'
@@ -76,10 +82,9 @@ const budgetMonthKey = (date?: string | null): string => {
 const emptyTotals = (): BudgetMonthTotals => ({
   planned: 0,
   actual: 0,
-  recurring: 0,
-  rollover: 0,
-  unassignedActuals: 0,
-  variance: 0
+  difference: 0,
+  rolloverFromPrevious: 0,
+  rolloverToNext: 0
 });
 
 const createBudgetMonth = (month: string, timestamp: string): BudgetMonth => ({
@@ -105,13 +110,35 @@ const cloneBudgetMonth = (month: BudgetMonth, timestamp: string, key: string): B
 });
 
 const computeBudgetTotals = (month: BudgetMonth): BudgetMonthTotals => {
-  const planned = month.plannedExpenses.reduce((sum, item) => sum + item.plannedAmount, 0);
-  const actual = month.plannedExpenses.reduce((sum, item) => sum + (item.actualAmount ?? 0), 0);
-  const recurring = month.recurringAllocations.reduce((sum, item) => sum + item.amount, 0);
-  const rollover = month.rollovers.reduce((sum, item) => sum + (item.remainderAmount ?? 0), 0);
-  const unassignedActuals = month.unassignedActuals.reduce((sum, item) => sum + item.amount, 0);
-  const variance = planned + recurring + rollover - actual - unassignedActuals;
-  return { planned, actual, recurring, rollover, unassignedActuals, variance };
+  const plannedItems = (month as unknown as { plannedItems?: BudgetPlannedItem[] }).plannedItems ?? [];
+  const plannedExpenses = (month as unknown as { plannedExpenses?: PlannedExpenseItem[] }).plannedExpenses ?? [];
+  const planned = plannedItems.length
+    ? plannedItems.reduce((sum, item) => sum + (item.plannedAmount ?? 0), 0)
+    : plannedExpenses.reduce((sum, item) => sum + item.plannedAmount, 0);
+
+  const actualEntries = (month as unknown as { actuals?: BudgetActual[] }).actuals ?? [];
+  const legacyActuals = plannedExpenses
+    .map((item) => (typeof item.actualAmount === 'number' ? item.actualAmount : 0))
+    .filter((value) => typeof value === 'number');
+  const actualAssigned = actualEntries.length
+    ? actualEntries.reduce((sum, item) => sum + (item.amount ?? 0), 0)
+    : legacyActuals.reduce((sum, value) => sum + value, 0);
+
+  const unassignedEntries = (month as unknown as { unassignedActuals?: BudgetActual[] }).unassignedActuals ?? [];
+  const unassignedActuals = unassignedEntries.reduce((sum, item) => sum + (item.amount ?? 0), 0);
+  const actual = actualAssigned + unassignedActuals;
+
+  const adjustments = (month as unknown as { adjustments?: BudgetAdjustment[] }).adjustments ?? [];
+  const rolloverFromPrevious = adjustments
+    .filter((item) => item.rolloverTargetMonth === month.month)
+    .reduce((sum, item) => sum + (item.amount ?? 0), 0);
+  const rolloverToNext = adjustments
+    .filter((item) => item.rolloverSourceMonth === month.month)
+    .reduce((sum, item) => sum + (item.amount ?? 0), 0);
+
+  const difference = planned + rolloverFromPrevious - rolloverToNext - actual;
+
+  return { planned, actual, difference, rolloverFromPrevious, rolloverToNext } satisfies BudgetMonthTotals;
 };
 
 export const ensureBudgetMonth = (
@@ -162,9 +189,6 @@ export const recomputeBudgetMonth = (
   };
 };
 
-const flattenBudgetMonths = (months: Record<string, BudgetMonth>): PlannedExpenseItem[] =>
-  Object.values(months).flatMap((month) => month.plannedExpenses);
-
 const findPlannedExpenseMonthKey = (
   snapshot: FinancialSnapshot,
   id: string
@@ -175,6 +199,174 @@ const findPlannedExpenseMonthKey = (
     }
   }
   return undefined;
+};
+
+const toBudgetPlannedItem = (
+  item: PlannedExpenseItem,
+  currency: Currency
+): BudgetPlannedItem => ({
+  id: item.id,
+  categoryId: item.categoryId,
+  name: item.name,
+  plannedAmount: item.plannedAmount,
+  rolloverAmount: item.remainderAmount ?? undefined,
+  currency,
+  notes: item.notes
+});
+
+const toBudgetActualFromPlanned = (
+  item: PlannedExpenseItem,
+  currency: Currency
+): BudgetActual | null => {
+  if (typeof item.actualAmount !== 'number' || Number.isNaN(item.actualAmount)) {
+    return null;
+  }
+  return {
+    id: `${item.id}-actual`,
+    categoryId: item.categoryId,
+    description: item.name,
+    amount: item.actualAmount,
+    currency,
+    occurredOn: item.dueDate ?? item.updatedAt
+  } satisfies BudgetActual;
+};
+
+const toBudgetActualFromTransaction = (
+  transaction: Transaction,
+  currency: Currency,
+  fallbackIndex: number
+): BudgetActual => ({
+  id: `${transaction.id ?? `txn-${fallbackIndex}`}-unassigned`,
+  transactionId: transaction.id,
+  categoryId: transaction.categoryId,
+  description: transaction.description,
+  amount: Math.abs(transaction.amount),
+  currency: transaction.currency ?? currency,
+  occurredOn: transaction.date
+});
+
+const toBudgetAdjustmentFromRollover = (
+  item: PlannedExpenseItem,
+  currency: Currency,
+  monthKey: string,
+  fallbackIndex: number
+): BudgetAdjustment | null => {
+  if (typeof item.remainderAmount !== 'number' || Number.isNaN(item.remainderAmount)) {
+    return null;
+  }
+  if (item.remainderAmount === 0) {
+    return null;
+  }
+  return {
+    id: `${item.id ?? `rollover-${fallbackIndex}`}-adjustment`,
+    categoryId: item.categoryId,
+    amount: item.remainderAmount,
+    currency,
+  reason: 'Rollover balance',
+  rolloverSourceMonth: monthKey
+} satisfies BudgetAdjustment;
+};
+
+const toBudgetRecurringAllocation = (
+  expense: RecurringExpense,
+  monthKey: string
+): BudgetRecurringAllocation => ({
+  id: expense.id,
+  recurringExpenseId: expense.id,
+  categoryId: expense.categoryId,
+  amount: expense.amount,
+  currency: expense.currency,
+  startMonth: monthKey,
+  endMonth: monthKey
+});
+
+const emptyModernTotals = (): BudgetMonthTotals => ({
+  planned: 0,
+  actual: 0,
+  difference: 0,
+  rolloverFromPrevious: 0,
+  rolloverToNext: 0
+});
+
+const normaliseBudgetMonthForSelectors = (
+  key: string,
+  month: BudgetMonth | undefined,
+  currency: Currency
+): BudgetMonth => {
+  const base = createDefaultBudgetMonth(key, currency);
+  if (!month) {
+    return base;
+  }
+
+  const resolvedCurrency = month.currency ?? currency;
+
+  const plannedItems: BudgetPlannedItem[] = Array.isArray((month as unknown as { plannedItems?: BudgetPlannedItem[] }).plannedItems) &&
+    (month as unknown as { plannedItems?: BudgetPlannedItem[] }).plannedItems?.length
+      ? ((month as unknown as { plannedItems: BudgetPlannedItem[] }).plannedItems)
+      : Array.isArray((month as unknown as { plannedExpenses?: PlannedExpenseItem[] }).plannedExpenses)
+      ? ((month as unknown as { plannedExpenses: PlannedExpenseItem[] }).plannedExpenses.map((item) =>
+          toBudgetPlannedItem(item, resolvedCurrency)
+        ))
+      : base.plannedItems;
+
+  const legacyPlannedExpenses = (month as unknown as { plannedExpenses?: PlannedExpenseItem[] }).plannedExpenses ?? [];
+
+  const actuals: BudgetActual[] = Array.isArray((month as unknown as { actuals?: BudgetActual[] }).actuals) &&
+    (month as unknown as { actuals?: BudgetActual[] }).actuals?.length
+      ? ((month as unknown as { actuals: BudgetActual[] }).actuals)
+      : legacyPlannedExpenses
+          .map((item) => toBudgetActualFromPlanned(item, resolvedCurrency))
+          .filter((item): item is BudgetActual => Boolean(item));
+
+  const legacyUnassigned = (month as unknown as { unassignedActuals?: Transaction[] | BudgetActual[] }).unassignedActuals ?? [];
+
+  const unassignedActuals: BudgetActual[] = Array.isArray(legacyUnassigned) && legacyUnassigned.length > 0
+    ? 'accountId' in legacyUnassigned[0]
+      ? (legacyUnassigned as Transaction[]).map((txn, index) =>
+          toBudgetActualFromTransaction(txn, resolvedCurrency, index)
+        )
+      : (legacyUnassigned as BudgetActual[])
+    : base.unassignedActuals;
+
+  const legacyRollovers = (month as unknown as { rollovers?: PlannedExpenseItem[] }).rollovers ?? [];
+
+  const adjustments: BudgetAdjustment[] = Array.isArray((month as unknown as { adjustments?: BudgetAdjustment[] }).adjustments) &&
+    (month as unknown as { adjustments?: BudgetAdjustment[] }).adjustments?.length
+      ? ((month as unknown as { adjustments: BudgetAdjustment[] }).adjustments)
+      : legacyRollovers
+          .map((item, index) =>
+            toBudgetAdjustmentFromRollover(item, resolvedCurrency, key, index)
+          )
+          .filter((item): item is BudgetAdjustment => Boolean(item));
+
+  const recurringAllocations: BudgetRecurringAllocation[] = Array.isArray(
+    (month as unknown as { recurringAllocations?: Array<BudgetRecurringAllocation | RecurringExpense> })
+      .recurringAllocations
+  )
+    ? ((month as unknown as { recurringAllocations?: Array<BudgetRecurringAllocation | RecurringExpense> })
+        .recurringAllocations ?? [])
+        .map((allocation) =>
+          'recurringExpenseId' in allocation
+            ? (allocation as BudgetRecurringAllocation)
+            : toBudgetRecurringAllocation(allocation as RecurringExpense, key)
+        )
+    : base.recurringAllocations;
+
+  return {
+    ...base,
+    ...month,
+    month: month.month ?? key,
+    currency: resolvedCurrency,
+    plannedItems,
+    actuals,
+    unassignedActuals,
+    adjustments,
+    recurringAllocations,
+    totals: {
+      ...emptyModernTotals(),
+      ...month.totals
+    }
+  } satisfies BudgetMonth;
 };
 
 interface InitialSetupPayload {
@@ -251,10 +443,15 @@ interface FinancialStoreActions {
 }
 
 interface FinancialStoreSelectors {
+  budgetMonthMap: Record<string, BudgetMonth>;
   budgetMonthsList: BudgetMonth[];
-  allBudgetedPlannedExpenses: PlannedExpenseItem[];
   getBudgetMonth: (monthKey: string) => BudgetMonth | undefined;
   budgetSummary: BudgetMonthTotals;
+  allBudgetPlannedItems: BudgetPlannedItem[];
+  allBudgetActuals: BudgetActual[];
+  allBudgetUnassignedActuals: BudgetActual[];
+  allBudgetAdjustments: BudgetAdjustment[];
+  allBudgetedPlannedExpenses: PlannedExpenseItem[];
 }
 
 type FinancialStoreContextValue = FinancialStoreState & FinancialStoreActions & FinancialStoreSelectors;
@@ -371,7 +568,10 @@ const deriveFromSnapshot = (snapshot: FinancialSnapshot): FinancialSnapshot => {
     working = recomputeBudgetMonth(working, key);
   }
 
-  const flattenedPlanned = flattenBudgetMonths(working.budgetMonths);
+  const baseCurrency = working.profile?.currency ?? 'INR';
+  const normalisedBudgetMonthsForInsights = Object.entries(working.budgetMonths).map(([key, month]) =>
+    normaliseBudgetMonthForSelectors(key, month, baseCurrency)
+  );
 
   const wealthMetrics = {
     ...simulateWealthAccelerator(
@@ -388,7 +588,7 @@ const deriveFromSnapshot = (snapshot: FinancialSnapshot): FinancialSnapshot => {
     accounts: working.accounts,
     transactions: working.transactions,
     recurringExpenses: working.recurringExpenses,
-    plannedExpenses: flattenedPlanned,
+    budgetMonths: normalisedBudgetMonthsForInsights,
     goals: working.goals,
     categories: working.categories,
     monthlyIncomes: working.monthlyIncomes,
@@ -1130,25 +1330,57 @@ export function useFinancialStore() {
   );
   const actions = useFinancialActions(container);
   const selectors = useMemo<FinancialStoreSelectors>(() => {
-    const map = state.budgetMonths ?? {};
-    const budgetMonthsList = Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
-    const allBudgetedPlannedExpenses = budgetMonthsList.flatMap((month) => month.plannedExpenses);
-    const budgetSummary = budgetMonthsList.reduce<BudgetMonthTotals>((acc, month) => ({
-      planned: acc.planned + month.totals.planned,
-      actual: acc.actual + month.totals.actual,
-      recurring: acc.recurring + month.totals.recurring,
-      rollover: acc.rollover + month.totals.rollover,
-      unassignedActuals: acc.unassignedActuals + month.totals.unassignedActuals,
-      variance: acc.variance + month.totals.variance
-    }), emptyTotals());
-    const getBudgetMonth = (monthKey: string) => map[monthKey];
+    const currency = state.profile?.currency ?? 'INR';
+    const rawMap = state.budgetMonths ?? {};
+    const normalisedEntries = Object.entries(rawMap).map(([key, month]) => [
+      key,
+      normaliseBudgetMonthForSelectors(key, month, currency)
+    ]);
+
+    if (normalisedEntries.length === 0) {
+      const monthKey = new Date().toISOString().slice(0, 7);
+      normalisedEntries.push([monthKey, createDefaultBudgetMonth(monthKey, currency)]);
+    }
+
+    const budgetMonthMap = Object.fromEntries(normalisedEntries) as Record<string, BudgetMonth>;
+
+    const budgetMonthsList = Object.values(budgetMonthMap).sort((a, b) => a.month.localeCompare(b.month));
+    const allBudgetedPlannedExpenses = Object.values(rawMap).flatMap((month) =>
+      Array.isArray(month?.plannedExpenses) ? month!.plannedExpenses : []
+    );
+    const allBudgetPlannedItems = budgetMonthsList.flatMap((month) => month.plannedItems);
+    const allBudgetActuals = budgetMonthsList.flatMap((month) => month.actuals);
+    const allBudgetUnassignedActuals = budgetMonthsList.flatMap((month) => month.unassignedActuals);
+    const allBudgetAdjustments = budgetMonthsList.flatMap((month) => month.adjustments);
+    const budgetSummary = budgetMonthsList.reduce<BudgetMonthTotals>(
+      (acc, month) => ({
+        planned: acc.planned + (month.totals?.planned ?? 0),
+        actual: acc.actual + (month.totals?.actual ?? 0),
+        difference:
+          acc.difference +
+          (month.totals?.difference ?? (month.totals?.planned ?? 0) - (month.totals?.actual ?? 0)),
+        rolloverFromPrevious:
+          acc.rolloverFromPrevious + (month.totals?.rolloverFromPrevious ?? 0),
+        rolloverToNext: acc.rolloverToNext + (month.totals?.rolloverToNext ?? 0)
+      }),
+      emptyModernTotals()
+    );
+
+    const getBudgetMonth = (monthKey: string) =>
+      budgetMonthMap[monthKey] ?? normaliseBudgetMonthForSelectors(monthKey, undefined, currency);
+
     return {
+      budgetMonthMap,
       budgetMonthsList,
-      allBudgetedPlannedExpenses,
       getBudgetMonth,
-      budgetSummary
+      budgetSummary,
+      allBudgetPlannedItems,
+      allBudgetActuals,
+      allBudgetUnassignedActuals,
+      allBudgetAdjustments,
+      allBudgetedPlannedExpenses
     } satisfies FinancialStoreSelectors;
-  }, [state.budgetMonths]);
+  }, [state.budgetMonths, state.profile?.currency]);
   return useMemo<FinancialStoreContextValue>(
     () => ({ ...state, ...actions, ...selectors }),
     [actions, selectors, state]

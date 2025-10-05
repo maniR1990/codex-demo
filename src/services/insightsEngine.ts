@@ -1,10 +1,10 @@
 import { differenceInMonths, parseISO } from 'date-fns';
 import type {
   Account,
+  BudgetMonth,
   Category,
   Goal,
   Insight,
-  PlannedExpenseItem,
   RecurringExpense,
   Transaction,
   MonthlyIncome,
@@ -15,7 +15,7 @@ interface InsightInput {
   accounts: Account[];
   transactions: Transaction[];
   recurringExpenses: RecurringExpense[];
-  plannedExpenses: PlannedExpenseItem[];
+  budgetMonths: BudgetMonth[];
   goals: Goal[];
   categories: Category[];
   monthlyIncomes: MonthlyIncome[];
@@ -108,19 +108,34 @@ export function generateInsights(input: InsightInput): Insight[] {
     });
   }
 
-  const plannedOverBudget = input.plannedExpenses.filter((expense) => expense.status === 'pending');
-  if (plannedOverBudget.length > 0) {
-    const totalPlanned = plannedOverBudget.reduce((sum, item) => sum + item.plannedAmount, 0);
+  const totalPlanned = input.budgetMonths.reduce((sum, month) => sum + (month.totals?.planned ?? 0), 0);
+  const totalActual = input.budgetMonths.reduce((sum, month) => sum + (month.totals?.actual ?? 0), 0);
+  const totalUnassigned = input.budgetMonths.reduce(
+    (sum, month) => sum + month.unassignedActuals.reduce((acc, item) => acc + (item.amount ?? 0), 0),
+    0
+  );
+  const rolloverCarry = input.budgetMonths.reduce(
+    (sum, month) => sum + (month.totals?.rolloverToNext ?? 0),
+    0
+  );
+  const adjustmentMagnitude = input.budgetMonths.reduce(
+    (sum, month) =>
+      sum + month.adjustments.reduce((adjSum, adjustment) => adjSum + Math.abs(adjustment.amount ?? 0), 0),
+    0
+  );
+
+  if (totalPlanned > totalActual) {
     insights.push({
       id: 'insight-planned-spend',
       title: 'Review planned variable expenses',
-      description: `You have ${currencyFormatter.format(totalPlanned)} of planned spends. Consider staggering purchases to reduce cash flow stress.`,
+      description: `You have ${currencyFormatter.format(totalPlanned - totalActual)} in planned spend yet to be matched. Unassigned spend totals ${currencyFormatter.format(totalUnassigned)} with ${currencyFormatter.format(rolloverCarry)} earmarked as rollovers.`,
       severity: 'warning',
       createdAt: now,
       updatedAt: now,
       recommendations: [
         'Tag each planned item as essential or deferrable to make trade-offs explicit.',
-        'Convert large purchases into short-term sinking funds before committing.'
+        'Convert large purchases into short-term sinking funds before committing.',
+        `Review ${currencyFormatter.format(adjustmentMagnitude)} of manual adjustments to confirm they still reflect intent.`
       ]
     });
   }

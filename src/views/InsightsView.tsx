@@ -9,7 +9,10 @@ export function InsightsView() {
     categories,
     profile,
     recurringExpenses,
-    allBudgetedPlannedExpenses
+    budgetMonthsList,
+    allBudgetPlannedItems,
+    allBudgetUnassignedActuals,
+    allBudgetAdjustments
   } = useFinancialStore();
   const [ruleReduction, setRuleReduction] = useState(15);
 
@@ -128,32 +131,33 @@ export function InsightsView() {
   }, [recurringExpenses, currencyFormatter]);
 
   const plannedExpenseSummary = useMemo(() => {
-    const pendingExpenses = allBudgetedPlannedExpenses.filter((expense) => expense.status === 'pending');
-    const totalPending = pendingExpenses.reduce((sum, item) => sum + item.plannedAmount, 0);
-
-    const nextExpense = pendingExpenses
-      .filter((expense) => Boolean(expense.dueDate))
-      .map((expense) => {
-        const scheduledDate = parseISO(expense.dueDate!);
-        return {
-          ...expense,
-          scheduledDate
-        };
-      })
-      .filter((expense) => isValid(expense.scheduledDate))
-      .sort((a, b) => a.scheduledDate.getTime() - b.scheduledDate.getTime())[0];
-
+    const totalPlanned = budgetMonthsList.reduce((sum, month) => sum + (month.totals?.planned ?? 0), 0);
+    const totalActual = budgetMonthsList.reduce((sum, month) => sum + (month.totals?.actual ?? 0), 0);
+    const remaining = Math.max(totalPlanned - totalActual, 0);
+    const totalUnassigned = allBudgetUnassignedActuals.reduce((sum, item) => sum + (item.amount ?? 0), 0);
+    const rolloverCarry = budgetMonthsList.reduce(
+      (sum, month) => sum + (month.totals?.rolloverToNext ?? 0),
+      0
+    );
+    const adjustmentMagnitude = allBudgetAdjustments.reduce(
+      (sum, adjustment) => sum + Math.abs(adjustment.amount ?? 0),
+      0
+    );
     return {
-      totalPending,
-      nextExpense: nextExpense
-        ? {
-            name: nextExpense.name,
-            dateLabel: format(nextExpense.scheduledDate, 'dd MMM'),
-            daysUntil: differenceInCalendarDays(nextExpense.scheduledDate, new Date())
-          }
-        : null
+      totalPlanned,
+      totalActual,
+      remaining,
+      totalUnassigned,
+      rolloverCarry,
+      plannedCount: allBudgetPlannedItems.length,
+      adjustmentMagnitude
     };
-  }, [allBudgetedPlannedExpenses]);
+  }, [
+    budgetMonthsList,
+    allBudgetUnassignedActuals,
+    allBudgetAdjustments,
+    allBudgetPlannedItems
+  ]);
 
   const actionableTiles = useMemo(() => {
     return [
@@ -170,18 +174,16 @@ export function InsightsView() {
         id: 'tile-planned-expense-review',
         title: 'Review planned variable expenses',
         primaryText:
-          plannedExpenseSummary.totalPending > 0
-            ? `${plannedExpenseSummary.nextExpense?.name ?? 'Pending purchases'}`
-            : 'All planned items reconciled',
+          plannedExpenseSummary.remaining > 0
+            ? `${plannedExpenseSummary.plannedCount} planned allocations still to be matched`
+            : 'All planned spending reconciled',
         metric:
-          plannedExpenseSummary.totalPending > 0
-            ? currencyFormatter.format(plannedExpenseSummary.totalPending)
+          plannedExpenseSummary.remaining > 0
+            ? currencyFormatter.format(plannedExpenseSummary.remaining)
             : undefined,
         caption:
-          plannedExpenseSummary.totalPending > 0
-            ? plannedExpenseSummary.nextExpense
-              ? `${plannedExpenseSummary.nextExpense.daysUntil <= 0 ? 'Due now' : `Next on ${plannedExpenseSummary.nextExpense.dateLabel}`}`
-              : 'Review timelines to balance cash flow.'
+          plannedExpenseSummary.remaining > 0
+            ? `Includes ${currencyFormatter.format(plannedExpenseSummary.totalUnassigned)} unassigned spend and ${currencyFormatter.format(plannedExpenseSummary.rolloverCarry)} earmarked rollovers (${currencyFormatter.format(plannedExpenseSummary.adjustmentMagnitude)} in adjustments).`
             : 'Great job staying on top of planned spending.'
       }
     ];

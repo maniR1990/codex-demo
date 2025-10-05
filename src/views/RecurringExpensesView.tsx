@@ -1,7 +1,8 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { addDays, addMonths, format, formatISO } from 'date-fns';
 import { useFinancialStore } from '../store/FinancialStoreProvider';
-import type { Frequency } from '../types';
+import type { Currency, Frequency } from '../types';
+import { createDefaultBudgetMonth } from '../types';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
@@ -14,7 +15,7 @@ export function RecurringExpensesView() {
     recurringExpenses,
     categories,
     transactions,
-    allBudgetedPlannedExpenses,
+    getBudgetMonth,
     addRecurringExpense,
     updateRecurringExpense,
     deleteRecurringExpense
@@ -64,43 +65,51 @@ export function RecurringExpensesView() {
       name: string;
       amount: number;
       dueDate: string;
-      source: 'planned' | 'recurring';
       frequency?: Frequency;
+      status: 'scheduled' | 'skipped' | 'adjusted';
     }> = [];
 
-    allBudgetedPlannedExpenses.forEach((item) => {
-      if (!billCategoryIds.has(item.categoryId)) return;
-      const due = new Date(item.dueDate).getTime();
-      if (due >= startOfToday.getTime() && due <= horizon) {
-        reminders.push({
-          id: item.id,
-          name: item.name,
-          amount: item.plannedAmount,
-          dueDate: item.dueDate,
-          source: 'planned'
-        });
-      }
-    });
+    const currency: Currency = recurringExpenses[0]?.currency ?? 'INR';
+    const monthKeysInRange = new Set<string>();
+    const cursor = new Date(startOfToday);
+    while (cursor.getTime() <= horizon) {
+      monthKeysInRange.add(formatISO(cursor, { representation: 'date' }).slice(0, 7));
+      cursor.setMonth(cursor.getMonth() + 1, 1);
+    }
 
-    recurringExpenses.forEach((expense) => {
-      if (!billCategoryIds.has(expense.categoryId)) return;
-      const dueDate = expense.nextDueDate ?? expense.dueDate;
-      const due = new Date(dueDate).getTime();
-      if (due >= startOfToday.getTime() && due <= horizon) {
+    monthKeysInRange.forEach((monthKey) => {
+      const budgetMonth = getBudgetMonth(monthKey) ?? createDefaultBudgetMonth(monthKey, currency);
+      budgetMonth.recurringAllocations.forEach((allocation) => {
+        const expense = recurringExpenses.find(
+          (item) => item.id === allocation.recurringExpenseId || item.id === allocation.id
+        );
+        if (!expense || !billCategoryIds.has(expense.categoryId)) {
+          return;
+        }
+        const dueDate = expense.nextDueDate ?? expense.dueDate ?? `${monthKey}-01`;
+        const dueTime = new Date(dueDate).getTime();
+        if (dueTime < startOfToday.getTime() || dueTime > horizon) {
+          return;
+        }
+        const status: 'scheduled' | 'skipped' | 'adjusted' = allocation.amount === 0
+          ? 'skipped'
+          : Math.abs(allocation.amount - expense.amount) > 1
+          ? 'adjusted'
+          : 'scheduled';
         reminders.push({
-          id: expense.id,
+          id: `${allocation.id}-${monthKey}`,
           name: expense.name,
-          amount: expense.amount,
+          amount: allocation.amount,
           dueDate,
-          source: 'recurring',
-          frequency: expense.frequency
+          frequency: expense.frequency,
+          status
         });
-      }
+      });
     });
 
     reminders.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
     return reminders;
-  }, [allBudgetedPlannedExpenses, recurringExpenses, billCategoryIds]);
+  }, [billCategoryIds, recurringExpenses, getBudgetMonth]);
 
   const reconciliation = useMemo(() => {
     return recurringExpenses.map((expense) => {
@@ -139,8 +148,8 @@ export function RecurringExpensesView() {
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
         <h3 className="text-lg font-semibold">Upcoming bill reminders</h3>
         <p className="text-xs text-slate-500">
-          Only expense categories tagged with <code>#bill</code> appear here. We watch planned purchases and recurring
-          debits for the next 14 days.
+          Only expense categories tagged with <code>#bill</code> appear here. We watch recurring debits and highlight
+          any skipped or adjusted allocations within the next 14 days.
         </p>
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {billReminders.map((reminder) => (
@@ -149,11 +158,21 @@ export function RecurringExpensesView() {
                 <div>
                   <h4 className="text-base font-semibold text-slate-100">{reminder.name}</h4>
                   <p className="text-xs text-slate-500">
-                    Due {format(new Date(reminder.dueDate), 'd MMM yyyy')} • {reminder.source === 'planned' ? 'Planned expense' : `${reminder.frequency ?? 'Recurring'}`}
+                    Due {format(new Date(reminder.dueDate), 'd MMM yyyy')} •
+                    {reminder.status === 'scheduled'
+                      ? ` Recurring · ${reminder.frequency ?? 'Monthly'}`
+                      : reminder.status === 'skipped'
+                      ? ' Skipped this cycle'
+                      : ' Adjusted allocation'}
                   </p>
                 </div>
                 <span className="text-warning font-semibold">{formatCurrency(reminder.amount)}</span>
               </div>
+              {reminder.status !== 'scheduled' && (
+                <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-warning">
+                  {reminder.status === 'skipped' ? 'Skipped' : 'Adjusted'}
+                </p>
+              )}
             </article>
           ))}
           {billReminders.length === 0 && (
