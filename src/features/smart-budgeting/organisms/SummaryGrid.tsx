@@ -169,7 +169,7 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
         {selectedCategoryId !== 'all' && (
           <button
             type="button"
-            onClick={() => focusCategory(selectedCategoryId, true)}
+            onClick={() => focusCategory(selectedCategoryId)}
             className="mt-3 text-[11px] font-semibold text-accent hover:text-accent/80"
           >
             Focus in navigator
@@ -194,7 +194,7 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
                   <button
                     type="button"
                     onClick={() => {
-                      focusCategory(category.id, true);
+                      focusCategory(category.id);
                       categories.handleSummaryScopeChange(category.id);
                     }}
                     className="font-semibold text-danger hover:underline"
