@@ -50,31 +50,6 @@ const statusIcons: Record<'all' | 'over' | 'under' | 'not-spent', JSX.Element> =
   )
 };
 
-const viewIcons: Record<'category' | 'priority', JSX.Element> = {
-  category: (
-    <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden>
-      <path
-        d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9l2 2.5h3.5A1.5 1.5 0 0 1 16 8v6.5A1.5 1.5 0 0 1 14.5 16h-9A1.5 1.5 0 0 1 4 14.5Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-    </svg>
-  ),
-  priority: (
-    <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden>
-      <path
-        d="m10 3 1.9 3.8 4.1.6-3 3 0.7 4.3L10 12.8 6.3 14.7 7 10.4l-3-3 4.1-.6Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-};
-
 const searchIcon = (
   <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden>
     <circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" strokeWidth="1.4" />
@@ -101,9 +76,6 @@ export function NavigatorFilters({ categories, table, onOpenDialog }: NavigatorF
     navigatorFilter,
     setNavigatorFilter,
     navigatorFilterOptions,
-    navigatorView,
-    setNavigatorView,
-    navigatorViewOptions,
     categorySearchTerm,
     setCategorySearchTerm,
     handleResetFilters
@@ -135,24 +107,6 @@ export function NavigatorFilters({ categories, table, onOpenDialog }: NavigatorF
               }`}
             >
               <span className="text-current [&>svg]:h-4 [&>svg]:w-4">{statusIcons[option.key]}</span>
-              <span className="whitespace-nowrap">{option.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="flex min-w-[200px] flex-col gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Navigator view</span>
-        <div className="flex flex-wrap gap-2">
-          {navigatorViewOptions.map((option) => (
-            <button
-              key={option.key}
-              type="button"
-              onClick={() => setNavigatorView(option.key)}
-              className={`flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold transition ${
-                navigatorView === option.key ? 'bg-accent text-slate-900' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-              }`}
-            >
-              <span className="text-current [&>svg]:h-4 [&>svg]:w-4">{viewIcons[option.key]}</span>
               <span className="whitespace-nowrap">{option.label}</span>
             </button>
           ))}
