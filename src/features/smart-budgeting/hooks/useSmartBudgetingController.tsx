@@ -82,62 +82,14 @@ export type SmartBudgetingColumnKey =
   | 'status'
   | 'priority';
 
-const COLUMN_KEYS = [
-  'category',
-  'item',
-  'planned',
-  'actual',
-  'variance',
-  'due',
-  'status',
-  'priority'
-] as const satisfies SmartBudgetingColumnKey[];
-
 type ColumnPreferences = {
   order: SmartBudgetingColumnKey[];
   visible: Record<SmartBudgetingColumnKey, boolean>;
   widths: Record<SmartBudgetingColumnKey, string>;
 };
 
-const COLUMN_MIN_WIDTHS: Record<SmartBudgetingColumnKey, number> = {
-  category: 180,
-  item: 220,
-  planned: 120,
-  actual: 150,
-  variance: 130,
-  due: 130,
-  status: 160,
-  priority: 120
-} as const;
-
-const COLUMN_FLEX_VALUES: Record<SmartBudgetingColumnKey, string> = {
-  category: '1.4fr',
-  item: '2fr',
-  planned: '1fr',
-  actual: '1.1fr',
-  variance: '1fr',
-  due: '0.9fr',
-  status: '1.1fr',
-  priority: '0.8fr'
-} as const;
-
-const formatColumnWidth = (column: SmartBudgetingColumnKey, width: number) => {
-  const minWidth = COLUMN_MIN_WIDTHS[column];
-  const flexValue = COLUMN_FLEX_VALUES[column];
-  const safeWidth = Math.max(minWidth, Math.round(width));
-  return `minmax(${safeWidth}px, ${flexValue})`;
-};
-
-const DEFAULT_COLUMN_WIDTHS = COLUMN_KEYS.reduce<Record<SmartBudgetingColumnKey, string>>((accumulator, column) => {
-  accumulator[column] = formatColumnWidth(column, COLUMN_MIN_WIDTHS[column]);
-  return accumulator;
-}, {} as Record<SmartBudgetingColumnKey, string>);
-
-export const SMART_BUDGETING_COLUMN_MIN_WIDTHS: Readonly<Record<SmartBudgetingColumnKey, number>> =
-  COLUMN_MIN_WIDTHS;
-
 const DEFAULT_COLUMN_PREFERENCES: ColumnPreferences = {
-  order: [...COLUMN_KEYS],
+  order: ['category', 'item', 'planned', 'actual', 'variance', 'due', 'status', 'priority'],
   visible: {
     category: true,
     item: true,
@@ -148,7 +100,16 @@ const DEFAULT_COLUMN_PREFERENCES: ColumnPreferences = {
     status: true,
     priority: true
   },
-  widths: { ...DEFAULT_COLUMN_WIDTHS }
+  widths: {
+    category: 'minmax(180px,1.4fr)',
+    item: 'minmax(220px,2fr)',
+    planned: 'minmax(120px,1fr)',
+    actual: 'minmax(150px,1.1fr)',
+    variance: 'minmax(130px,1fr)',
+    due: 'minmax(130px,0.9fr)',
+    status: 'minmax(160px,1.1fr)',
+    priority: 'minmax(120px,0.8fr)'
+  }
 } as const satisfies ColumnPreferences;
 
 function generateEntryId() {
@@ -220,10 +181,10 @@ export function useSmartBudgetingController() {
     });
   }, []);
 
-  const setColumnWidth = useCallback((column: SmartBudgetingColumnKey, width: number) => {
+  const setColumnWidth = useCallback((column: SmartBudgetingColumnKey, width: string) => {
     setColumnPreferences((previous) => ({
       ...previous,
-      widths: { ...previous.widths, [column]: formatColumnWidth(column, width) }
+      widths: { ...previous.widths, [column]: width || previous.widths[column] }
     }));
   }, []);
 
