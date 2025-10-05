@@ -351,23 +351,6 @@ export function useSmartBudgetingController() {
 
   const categoryLookup = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
 
-  const categoryParentMap = useMemo(() => {
-    const map = new Map<string, string | null>();
-    expenseCategories.forEach((category) => {
-      if (!category.parentId) {
-        map.set(category.id, null);
-        return;
-      }
-      const parent = categoryLookup.get(category.parentId);
-      if (parent && parent.type === 'expense') {
-        map.set(category.id, parent.id);
-      } else {
-        map.set(category.id, null);
-      }
-    });
-    return map;
-  }, [expenseCategories, categoryLookup]);
-
   useEffect(() => {
     if (selectedCategoryId !== 'all' && !categoryLookup.has(selectedCategoryId)) {
       setSelectedCategoryId('all');
@@ -433,7 +416,6 @@ export function useSmartBudgetingController() {
     [allExpenseIdsSet, expenseDescendantsMap]
   );
 
-  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({
     categoryId: '',
@@ -451,6 +433,7 @@ export function useSmartBudgetingController() {
   const [navigatorView, setNavigatorView] = useState<'category' | 'priority'>('category');
   const [categorySearchTerm, setCategorySearchTerm] = useState('');
   const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
+  const [focusedDetailId, setFocusedDetailId] = useState<string | null>(null);
   const [budgetDraft, setBudgetDraft] = useState('');
   const [isSavingBudget, setIsSavingBudget] = useState(false);
   const [budgetError, setBudgetError] = useState<string | null>(null);
@@ -469,18 +452,6 @@ export function useSmartBudgetingController() {
   ];
 
   const normalisedSearchTerm = categorySearchTerm.trim().toLowerCase();
-
-  useEffect(() => {
-    setExpandedCategories((previous) => {
-      const next: Record<string, boolean> = {};
-      expenseCategories.forEach((category) => {
-        const parent = expenseCategories.find((candidate) => candidate.id === category.parentId);
-        const isRoot = !category.parentId || !parent;
-        next[category.id] = previous[category.id] ?? isRoot;
-      });
-      return next;
-    });
-  }, [expenseCategories]);
 
   useEffect(() => {
     setBudgetError(null);
@@ -542,6 +513,12 @@ export function useSmartBudgetingController() {
     () => new Map(plannedExpenseDetails.map((detail) => [detail.item.id, detail])),
     [plannedExpenseDetails]
   );
+
+  useEffect(() => {
+    if (focusedDetailId && !plannedDetailsById.has(focusedDetailId)) {
+      setFocusedDetailId(null);
+    }
+  }, [focusedDetailId, plannedDetailsById]);
 
   const matchedTransactionIds = useMemo(
     () =>
@@ -697,6 +674,39 @@ export function useSmartBudgetingController() {
     [expenseCategories, categorySummaries]
   );
 
+  const activeCategoryIds = useMemo(() => {
+    if (selectedCategoryId === 'all') {
+      return null;
+    }
+    return resolveCategoryIds(selectedCategoryId);
+  }, [resolveCategoryIds, selectedCategoryId]);
+
+  const visibleNavigatorDetails = useMemo(() => {
+    return plannedExpenseDetails.filter((detail) => {
+      if (activeCategoryIds && !activeCategoryIds.has(detail.item.categoryId)) {
+        return false;
+      }
+      if (navigatorFilter !== 'all' && detail.status !== navigatorFilter) {
+        return false;
+      }
+      if (normalisedSearchTerm === '') {
+        return true;
+      }
+      const categoryName =
+        categoryLookup.get(detail.item.categoryId)?.name?.toLowerCase() ?? 'uncategorised';
+      return (
+        detail.item.name.toLowerCase().includes(normalisedSearchTerm) ||
+        categoryName.includes(normalisedSearchTerm)
+      );
+    });
+  }, [
+    plannedExpenseDetails,
+    activeCategoryIds,
+    navigatorFilter,
+    normalisedSearchTerm,
+    categoryLookup
+  ]);
+
   useEffect(() => {
     if (editingItemId && !periodPlannedExpenses.some((item) => item.id === editingItemId)) {
       setEditingItemId(null);
@@ -728,24 +738,11 @@ export function useSmartBudgetingController() {
     setBudgetDraft(typeof budgetValue === 'number' && !Number.isNaN(budgetValue) ? String(budgetValue) : '');
   }, [focusedCategoryId, categoryLookup, viewMode]);
 
-  const uncategorisedDetails = useMemo(
-    () => plannedExpenseDetails.filter((detail) => !expenseCategoryIds.has(detail.item.categoryId)),
-    [plannedExpenseDetails, expenseCategoryIds]
-  );
-
-  const visibleUncategorisedDetails = useMemo(
-    () =>
-      uncategorisedDetails.filter((detail) => {
-        const matchesFilter = navigatorFilter === 'all' || detail.status === navigatorFilter;
-        const matchesSearch =
-          normalisedSearchTerm === '' || detail.item.name.toLowerCase().includes(normalisedSearchTerm);
-        return matchesFilter && matchesSearch;
-      }),
-    [uncategorisedDetails, navigatorFilter, normalisedSearchTerm]
-  );
-
   const filteredPriorityDetails = useMemo(() => {
     return plannedExpenseDetails.filter((detail) => {
+      if (activeCategoryIds && !activeCategoryIds.has(detail.item.categoryId)) {
+        return false;
+      }
       const matchesFilter = navigatorFilter === 'all' || detail.status === navigatorFilter;
       if (!matchesFilter) {
         return false;
@@ -758,7 +755,13 @@ export function useSmartBudgetingController() {
         detail.item.name.toLowerCase().includes(normalisedSearchTerm) || categoryName.includes(normalisedSearchTerm)
       );
     });
-  }, [plannedExpenseDetails, navigatorFilter, normalisedSearchTerm, categoryLookup]);
+  }, [
+    plannedExpenseDetails,
+    activeCategoryIds,
+    navigatorFilter,
+    normalisedSearchTerm,
+    categoryLookup
+  ]);
 
   const priorityGroups = useMemo(() => {
     const groups: Record<PlannedExpenseItem['priority'], PlannedExpenseDetail[]> = {
@@ -847,23 +850,6 @@ export function useSmartBudgetingController() {
     completed.sort((a, b) => new Date(b.item.dueDate).getTime() - new Date(a.item.dueDate).getTime());
     return completed.slice(0, 3);
   }, [inspectorDetails]);
-
-  const updateAllCategoryExpansion = (expanded: boolean) => {
-    const next: Record<string, boolean> = {};
-    const visit = (nodes: CategoryNode[]) => {
-      nodes.forEach((node) => {
-        next[node.id] = expanded;
-        if (node.children.length > 0) {
-          visit(node.children);
-        }
-      });
-    };
-    visit(expenseCategoryTree);
-    setExpandedCategories(next);
-  };
-
-  const expandAllCategories = () => updateAllCategoryExpansion(true);
-  const collapseAllCategories = () => updateAllCategoryExpansion(false);
 
   const statusBadge = (status: PlannedExpenseItem['status']) => {
     const baseClass = 'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide';
@@ -990,30 +976,21 @@ export function useSmartBudgetingController() {
   const shouldShowValidationError = hasAttemptedSubmit && (hasInvalidEntries || expenseCategories.length === 0);
   const canRemoveRows = plannedEntries.length > 1;
 
-  const toggleCategory = (id: string) => {
-    setExpandedCategories((previous) => ({ ...previous, [id]: !previous[id] }));
-  };
-
-  function focusCategory(id: string, expandSelf = false) {
+  function focusCategory(id: string) {
     setFocusedCategoryId(id);
-    setExpandedCategories((previous) => {
-      const next = { ...previous } as Record<string, boolean>;
-      let currentParent = categoryParentMap.get(id) ?? null;
-      while (currentParent) {
-        next[currentParent] = true;
-        currentParent = categoryParentMap.get(currentParent) ?? null;
+    setFocusedDetailId((previous) => {
+      if (!previous) {
+        return null;
       }
-      if (expandSelf) {
-        next[id] = true;
-      }
-      return next;
+      const detail = plannedDetailsById.get(previous);
+      return detail && detail.item.categoryId === id ? previous : null;
     });
   }
 
   const handleSummaryScopeChange = (value: 'all' | string) => {
     setSelectedCategoryId(value);
     if (value !== 'all') {
-      focusCategory(value, true);
+      focusCategory(value);
     }
   };
 
@@ -1095,6 +1072,8 @@ export function useSmartBudgetingController() {
 
   const handleStartEdit = (detail: PlannedExpenseDetail) => {
     setEditingItemId(detail.item.id);
+    setFocusedDetailId(detail.item.id);
+    setFocusedCategoryId(detail.item.categoryId);
     const manualActual =
       typeof detail.item.actualAmount === 'number' && !Number.isNaN(detail.item.actualAmount)
         ? detail.item.actualAmount
@@ -1212,7 +1191,11 @@ export function useSmartBudgetingController() {
     setNavigatorFilter('all');
     setCategorySearchTerm('');
     setNavigatorView('category');
-    focusCategory(detail.item.categoryId, true);
+    setFocusedCategoryId(detail.item.categoryId);
+    setFocusedDetailId(detail.item.id);
+    if (activeCategoryIds && !activeCategoryIds.has(detail.item.categoryId)) {
+      setSelectedCategoryId('all');
+    }
     handleStartEdit(detail);
   };
 
@@ -1232,7 +1215,8 @@ export function useSmartBudgetingController() {
       : 'over';
   const selectedStatusToken = SPENDING_BADGE_STYLES[selectedCategoryStatus];
   const baselineLabel = viewMode === 'monthly' ? 'Monthly baseline (₹)' : 'Yearly baseline (₹)';
-  const hasNavigatorResults = expenseCategoryTree.length > 0 || visibleUncategorisedDetails.length > 0;
+  const hasNavigatorResults =
+    visibleNavigatorDetails.length > 0 || filteredPriorityDetails.length > 0;
 
   const tableConfig = useMemo(
     () => ({
@@ -1489,17 +1473,12 @@ export function useSmartBudgetingController() {
     categories: {
       options: categoryOptions,
       lookup: categoryLookup,
-      tree: expenseCategoryTree,
-      expanded: expandedCategories,
-      toggleCategory,
       focusCategory,
-      expandAllCategories,
-      collapseAllCategories,
       categorySummaries,
       itemsByCategory,
       expenseDescendantsMap,
       expenseCategoryIds,
-      visibleUncategorisedDetails,
+      visibleNavigatorDetails,
       navigatorFilter,
       setNavigatorFilter,
       navigatorFilterOptions,
@@ -1513,6 +1492,8 @@ export function useSmartBudgetingController() {
       visibleCategoryDetails: plannedExpenseDetails,
       focusedCategoryId,
       setFocusedCategoryId,
+      focusedDetailId,
+      setFocusedDetailId,
       selectedCategoryId,
       handleSummaryScopeChange,
       selectedCategoryLabel,
@@ -1522,8 +1503,6 @@ export function useSmartBudgetingController() {
       selectedCategoryVariance,
       hasNavigatorResults,
       setSelectedCategoryId,
-      renderedCategories: expenseCategoryTree,
-      categoryParentMap,
       handleResetFilters
     },
     overview: {

@@ -59,29 +59,6 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{summaryPeriodLabel} overview</p>
             <p className="mt-1 text-lg font-semibold text-slate-100">{periodLabel}</p>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
-              <span>
-                Planned:{' '}
-                <span className="font-semibold text-slate-100">
-                  {utils.formatCurrency(overallSummary.planned)}
-                </span>
-              </span>
-              <span>
-                Spent:{' '}
-                <span className="font-semibold text-slate-100">
-                  {utils.formatCurrency(overallSummary.actual)}
-                </span>
-              </span>
-              <span>
-                Remaining:{' '}
-                <span className={`font-semibold ${remaining >= 0 ? 'text-success' : 'text-danger'}`}>
-                  {utils.formatCurrency(remaining)}
-                </span>{' '}
-                <span className="text-slate-500">
-                  ({remainingPercent}% {remainingDescriptor})
-                </span>
-              </span>
-            </div>
           </div>
           <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${overallStatusToken.badgeClass}`}>
             {overallStatusToken.label}
@@ -169,7 +146,7 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
         {selectedCategoryId !== 'all' && (
           <button
             type="button"
-            onClick={() => focusCategory(selectedCategoryId, true)}
+            onClick={() => focusCategory(selectedCategoryId)}
             className="mt-3 text-[11px] font-semibold text-accent hover:text-accent/80"
           >
             Focus in navigator
@@ -194,7 +171,7 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
                   <button
                     type="button"
                     onClick={() => {
-                      focusCategory(category.id, true);
+                      focusCategory(category.id);
                       categories.handleSummaryScopeChange(category.id);
                     }}
                     className="font-semibold text-danger hover:underline"

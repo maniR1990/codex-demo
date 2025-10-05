@@ -10,9 +10,20 @@ interface PlannedExpenseItemCardProps {
   editing: SmartBudgetingController['editing'];
   table: SmartBudgetingController['table'];
   utils: SmartBudgetingController['utils'];
+  isFocused?: boolean;
+  rowRef?: (element: HTMLDivElement | null) => void;
 }
 
-export function PlannedExpenseItemCard({ detail, depth, categories, editing, table, utils }: PlannedExpenseItemCardProps) {
+export function PlannedExpenseItemCard({
+  detail,
+  depth,
+  categories,
+  editing,
+  table,
+  utils,
+  isFocused = false,
+  rowRef
+}: PlannedExpenseItemCardProps) {
   const {
     editingItemId,
     editDraft,
@@ -114,12 +125,16 @@ export function PlannedExpenseItemCard({ detail, depth, categories, editing, tab
 
   const indentationStyle = { paddingLeft: depth * 20 };
 
+  const rowToneClass = isEditing
+    ? 'bg-slate-950/60 ring-1 ring-inset ring-accent/40'
+    : isFocused
+    ? 'bg-slate-900/60 ring-1 ring-inset ring-accent/30'
+    : 'bg-slate-950/25 hover:bg-slate-900/55';
+
   return (
     <div
-      key={detail.item.id}
-      className={`group/row grid items-start gap-4 border-t border-slate-800/60 px-4 py-3 text-[11px] sm:text-xs transition ${
-        isEditing ? 'bg-slate-950/60 ring-1 ring-inset ring-accent/40' : 'bg-slate-950/25 hover:bg-slate-900/55'
-      }`}
+      ref={rowRef}
+      className={`group/row grid items-start gap-4 border-t border-slate-800/60 px-4 py-3 text-[11px] sm:text-xs transition ${rowToneClass}`}
       style={{ gridTemplateColumns: table.gridTemplateColumns }}
     >
       {table.visibleColumns.map((column) => {
