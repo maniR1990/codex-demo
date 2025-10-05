@@ -65,43 +65,77 @@ export function SummaryHeaderControls({ period, table, onOpenDialog, onExpandAll
       </div>
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-200">
-          <button
-            type="button"
-            onClick={goToPreviousPeriod}
-            className="rounded-md border border-slate-700 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-accent"
-            aria-label="Previous period"
-          >
-            ‹
-          </button>
-          <span className="text-sm font-semibold text-slate-100">{periodLabel}</span>
-          <button
-            type="button"
-            onClick={goToNextPeriod}
-            className="rounded-md border border-slate-700 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-accent"
-            aria-label="Next period"
-          >
-            ›
-          </button>
+        <div className="flex items-stretch overflow-hidden rounded-lg border border-slate-700 bg-slate-950/70 text-sm text-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <button
+              type="button"
+              onClick={goToPreviousPeriod}
+              className="rounded-md bg-slate-900/40 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:bg-slate-900/60 hover:text-accent"
+              aria-label="Previous period"
+            >
+              ‹
+            </button>
+            <span className="text-sm font-semibold text-slate-100">{periodLabel}</span>
+            <button
+              type="button"
+              onClick={goToNextPeriod}
+              className="rounded-md bg-slate-900/40 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:bg-slate-900/60 hover:text-accent"
+              aria-label="Next period"
+            >
+              ›
+            </button>
+          </div>
+          {viewMode === 'monthly' ? (
+            <div className="flex items-center border-l border-slate-700 bg-slate-950/60">
+              <button
+                type="button"
+                onClick={openMonthPicker}
+                className="flex h-full items-center px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-900/60 hover:text-accent"
+                aria-label="Select month"
+              >
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <path d="M16 2v4" />
+                  <path d="M8 2v4" />
+                  <path d="M3 10h18" />
+                </svg>
+              </button>
+              <input
+                ref={monthInputRef}
+                type="month"
+                value={selectedMonth}
+                onChange={(event) => handleMonthInputChange(event.target.value)}
+                className="sr-only"
+                aria-label="Month picker"
+              />
+            </div>
+          ) : (
+            <div className="flex items-center border-l border-slate-700 bg-slate-950/60 px-3 py-2">
+              <label htmlFor="summary-year-input" className="sr-only">
+                Select year
+              </label>
+              <input
+                id="summary-year-input"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={4}
+                value={selectedYear}
+                onChange={(event) => handleYearInputChange(event.target.value)}
+                className="w-20 bg-transparent text-sm text-slate-100 placeholder-slate-500 focus:outline-none"
+              />
+            </div>
+          )}
         </div>
-        {viewMode === 'monthly' ? (
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={(event) => handleMonthInputChange(event.target.value)}
-            className="rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 focus:border-accent focus:outline-none"
-          />
-        ) : (
-          <input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            maxLength={4}
-            value={selectedYear}
-            onChange={(event) => handleYearInputChange(event.target.value)}
-            className="w-24 rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 focus:border-accent focus:outline-none"
-          />
-        )}
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -113,16 +147,40 @@ export function SummaryHeaderControls({ period, table, onOpenDialog, onExpandAll
           <button
             type="button"
             onClick={onExpandAll}
-            className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500"
+            aria-label="Expand all"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-slate-500 hover:text-accent"
           >
-            Expand all
+            <svg
+              aria-hidden="true"
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
           </button>
           <button
             type="button"
             onClick={onCollapseAll}
-            className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500"
+            aria-label="Collapse all"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-slate-500 hover:text-accent"
           >
-            Collapse all
+            <svg
+              aria-hidden="true"
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M5 12h14" />
+            </svg>
           </button>
           <details className="relative">
             <summary
