@@ -10,7 +10,7 @@ import { createDefaultBudgetMonth } from '../types';
 
 export function SmartBudgetingView() {
   const controller = useSmartBudgetingController();
-  const { dialog, utils, period, categories, overview, inspector, editing } = controller;
+  const { dialog, utils, period, categories, overview, inspector, editing, table } = controller;
   const { getBudgetMonth, profile } = useFinancialStore();
 
   const selectedMonth = period.selectedMonth;
@@ -23,6 +23,7 @@ export function SmartBudgetingView() {
 
       <SummaryHeaderControls
         period={period}
+        table={table}
         onOpenDialog={dialog.open}
         onExpandAll={categories.expandAllCategories}
         onCollapseAll={categories.collapseAllCategories}
@@ -35,7 +36,7 @@ export function SmartBudgetingView() {
 
       <NavigatorFilters categories={categories} />
 
-      <CategoryNavigator categories={categories} editing={editing} utils={utils} />
+      <CategoryNavigator categories={categories} editing={editing} table={table} utils={utils} />
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
         <header className="mb-4 flex items-center justify-between">

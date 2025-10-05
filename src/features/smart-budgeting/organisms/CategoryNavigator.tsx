@@ -4,6 +4,7 @@ import { PlannedExpenseItemCard } from '../molecules/PlannedExpenseItemCard';
 import type {
   CategoryNode,
   PlannedExpenseDetail,
+  SmartBudgetingColumnKey,
   SmartBudgetingController
 } from '../hooks/useSmartBudgetingController';
 
@@ -24,10 +25,11 @@ const ChevronRightIcon = ({ className = 'h-3.5 w-3.5' }: { className?: string })
 interface CategoryNavigatorProps {
   categories: SmartBudgetingController['categories'];
   editing: SmartBudgetingController['editing'];
+  table: SmartBudgetingController['table'];
   utils: SmartBudgetingController['utils'];
 }
 
-export function CategoryNavigator({ categories, editing, utils }: CategoryNavigatorProps) {
+export function CategoryNavigator({ categories, editing, table, utils }: CategoryNavigatorProps) {
   const {
     tree,
     expanded,
@@ -44,6 +46,15 @@ export function CategoryNavigator({ categories, editing, utils }: CategoryNaviga
     hasNavigatorResults,
     renderedCategories
   } = categories;
+  const { visibleColumns, gridTemplateColumns } = table;
+  const columnLabels: Record<SmartBudgetingColumnKey, string> = {
+    category: 'Category / Planned items',
+    earliestDue: 'Earliest due',
+    planned: 'Planned',
+    actual: 'Actual',
+    variance: 'Variance',
+    actions: 'Actions'
+  } as const;
 
   const renderCategorySection = (category: CategoryNode, depth = 0): JSX.Element | null => {
     const summary = categorySummaries.get(category.id) ?? {
@@ -123,62 +134,103 @@ export function CategoryNavigator({ categories, editing, utils }: CategoryNaviga
       <div key={category.id} className={dimClass}>
         <div
           onClick={() => focusCategory(category.id, true)}
-          className={`grid cursor-pointer grid-cols-[minmax(0,2.6fr)_minmax(110px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(220px,1fr)] items-center gap-4 border-t border-slate-800/70 px-4 py-3 text-[11px] sm:text-xs transition ${focusClass}`}
+          className={`grid cursor-pointer items-center gap-4 border-t border-slate-800/70 px-4 py-3 text-[11px] sm:text-xs transition ${focusClass}`}
+          style={{ gridTemplateColumns }}
         >
-          <div className="flex min-w-0 items-center gap-3" style={{ paddingLeft: indentation }}>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                handleToggle();
-              }}
-              aria-expanded={Boolean(isExpanded)}
-              aria-disabled={!canExpand}
-              className={`flex h-6 w-6 items-center justify-center rounded-md border border-slate-700 bg-slate-950/60 text-slate-400 transition ${
-                canExpand ? 'hover:border-accent hover:text-accent' : 'cursor-default opacity-40'
-              }`}
-            >
-              {canExpand ? (
-                <span aria-hidden className={`flex items-center justify-center transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
-                  <ChevronRightIcon />
-                </span>
-              ) : (
-                <span aria-hidden className="block h-1.5 w-1.5 rounded-full bg-current" />
-              )}
-              <span className="sr-only">{canExpand ? (isExpanded ? 'Collapse category' : 'Expand category') : 'No nested items'}</span>
-            </button>
-            <div className="min-w-0 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="truncate text-sm font-semibold text-slate-100">{category.name}</p>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusToken.badgeClass}`}>
-                  {statusToken.label}
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
-                <span>{summary.itemCount} planned item{summary.itemCount === 1 ? '' : 's'}</span>
-                {nextDueLabel && <span>Next due {nextDueLabel}</span>}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center justify-end gap-2 text-xs text-slate-300">
-            <CalendarIcon className={`h-4 w-4 ${dueIconClass}`} />
-            <span className={`whitespace-nowrap text-sm font-semibold ${dueTextClass}`}>{dueDisplayLabel}</span>
-          </div>
-          <div className="text-right text-sm font-semibold text-warning whitespace-nowrap">
-            {utils.formatCurrency(summary.planned)}
-          </div>
-          <div className="text-right text-sm font-semibold text-slate-200 whitespace-nowrap">
-            {utils.formatCurrency(summary.actual)}
-          </div>
-          <div className="flex flex-nowrap items-center justify-end gap-2 text-right">
-            <span className={`whitespace-nowrap text-sm font-semibold ${remainderClass}`}>
-              {utils.formatCurrency(summary.variance)}
-            </span>
-            <span className="whitespace-nowrap rounded-full bg-slate-900/40 px-2 py-0.5 text-[10px] text-slate-400">
-              {remainderDescriptor}
-            </span>
-          </div>
-          <div className="flex items-center justify-end" />
+          {visibleColumns.map((column) => {
+            if (column === 'category') {
+              return (
+                <div
+                  key={`${category.id}-${column}`}
+                  className="flex min-w-0 items-center gap-3"
+                  style={{ paddingLeft: indentation }}
+                >
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleToggle();
+                    }}
+                    aria-expanded={Boolean(isExpanded)}
+                    aria-disabled={!canExpand}
+                    className={`flex h-6 w-6 items-center justify-center rounded-md border border-slate-700 bg-slate-950/60 text-slate-400 transition ${
+                      canExpand ? 'hover:border-accent hover:text-accent' : 'cursor-default opacity-40'
+                    }`}
+                  >
+                    {canExpand ? (
+                      <span
+                        aria-hidden
+                        className={`flex items-center justify-center transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                      >
+                        <ChevronRightIcon />
+                      </span>
+                    ) : (
+                      <span aria-hidden className="block h-1.5 w-1.5 rounded-full bg-current" />
+                    )}
+                    <span className="sr-only">
+                      {canExpand ? (isExpanded ? 'Collapse category' : 'Expand category') : 'No nested items'}
+                    </span>
+                  </button>
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-slate-100">{category.name}</p>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusToken.badgeClass}`}>
+                        {statusToken.label}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                      <span>{summary.itemCount} planned item{summary.itemCount === 1 ? '' : 's'}</span>
+                      {nextDueLabel && <span>Next due {nextDueLabel}</span>}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            if (column === 'earliestDue') {
+              return (
+                <div key={`${category.id}-${column}`} className="flex items-center justify-end gap-2 text-xs text-slate-300">
+                  <CalendarIcon className={`h-4 w-4 ${dueIconClass}`} />
+                  <span className={`whitespace-nowrap text-sm font-semibold ${dueTextClass}`}>{dueDisplayLabel}</span>
+                </div>
+              );
+            }
+            if (column === 'planned') {
+              return (
+                <div
+                  key={`${category.id}-${column}`}
+                  className="whitespace-nowrap text-right text-sm font-semibold text-warning"
+                >
+                  {utils.formatCurrency(summary.planned)}
+                </div>
+              );
+            }
+            if (column === 'actual') {
+              return (
+                <div
+                  key={`${category.id}-${column}`}
+                  className="whitespace-nowrap text-right text-sm font-semibold text-slate-200"
+                >
+                  {utils.formatCurrency(summary.actual)}
+                </div>
+              );
+            }
+            if (column === 'variance') {
+              return (
+                <div
+                  key={`${category.id}-${column}`}
+                  className="flex flex-nowrap items-center justify-end gap-2 text-right"
+                >
+                  <span className={`whitespace-nowrap text-sm font-semibold ${remainderClass}`}>
+                    {utils.formatCurrency(summary.variance)}
+                  </span>
+                  <span className="whitespace-nowrap rounded-full bg-slate-900/40 px-2 py-0.5 text-[10px] text-slate-400">
+                    {remainderDescriptor}
+                  </span>
+                </div>
+              );
+            }
+            return <div key={`${category.id}-${column}`} className="flex items-center justify-end" />;
+          })}
         </div>
         {isExpanded && (
           <div className="bg-slate-950/15">
@@ -190,6 +242,7 @@ export function CategoryNavigator({ categories, editing, utils }: CategoryNaviga
                   depth={depth + 1}
                   categories={categories}
                   editing={editing}
+                  table={table}
                   utils={utils}
                 />
               ))}
@@ -223,6 +276,7 @@ export function CategoryNavigator({ categories, editing, utils }: CategoryNaviga
                     depth={0}
                     categories={categories}
                     editing={editing}
+                    table={table}
                     utils={utils}
                   />
                 ))}
@@ -249,6 +303,7 @@ export function CategoryNavigator({ categories, editing, utils }: CategoryNaviga
             depth={0}
             categories={categories}
             editing={editing}
+            table={table}
             utils={utils}
           />
         ))}
@@ -272,13 +327,15 @@ export function CategoryNavigator({ categories, editing, utils }: CategoryNaviga
             <div className="overflow-hidden rounded-2xl border border-slate-800/70 bg-slate-950/40 shadow-inner">
               <div className="overflow-x-auto">
                 <div className="min-w-[980px] text-xs">
-                  <div className="grid grid-cols-[minmax(0,2.6fr)_minmax(110px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(220px,1fr)] items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    <span>Category / Planned items</span>
-                    <span className="text-right">Earliest due</span>
-                    <span className="text-right">Planned</span>
-                    <span className="text-right">Actual</span>
-                    <span className="text-right">Variance</span>
-                    <span className="text-right">Actions</span>
+                  <div
+                    className="grid items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400"
+                    style={{ gridTemplateColumns }}
+                  >
+                    {visibleColumns.map((column) => (
+                      <span key={`header-${column}`} className={column === 'category' ? '' : 'text-right'}>
+                        {columnLabels[column]}
+                      </span>
+                    ))}
                   </div>
                   <div>{categorySections}</div>
                 </div>
