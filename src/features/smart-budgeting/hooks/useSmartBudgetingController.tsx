@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { addMonths, format, formatISO, parseISO } from 'date-fns';
 import { useFinancialStore } from '../../../store/FinancialStoreProvider';
 import type { Category, PlannedExpenseItem, Transaction } from '../../../types';
@@ -72,6 +72,40 @@ const PROGRESS_COLOR_BY_STATUS: Record<PlannedExpenseSpendingHealth, string> = {
   over: '#ef4444'
 };
 
+export type SmartBudgetingColumnKey =
+  | 'category'
+  | 'earliestDue'
+  | 'planned'
+  | 'actual'
+  | 'variance'
+  | 'actions';
+
+type ColumnPreferences = {
+  order: SmartBudgetingColumnKey[];
+  visible: Record<SmartBudgetingColumnKey, boolean>;
+  widths: Record<SmartBudgetingColumnKey, string>;
+};
+
+const DEFAULT_COLUMN_PREFERENCES: ColumnPreferences = {
+  order: ['category', 'earliestDue', 'planned', 'actual', 'variance', 'actions'],
+  visible: {
+    category: true,
+    earliestDue: true,
+    planned: true,
+    actual: true,
+    variance: true,
+    actions: true
+  },
+  widths: {
+    category: 'minmax(0,2.6fr)',
+    earliestDue: 'minmax(110px,0.9fr)',
+    planned: 'minmax(120px,0.9fr)',
+    actual: 'minmax(120px,0.9fr)',
+    variance: 'minmax(120px,0.9fr)',
+    actions: 'minmax(220px,1fr)'
+  }
+} as const satisfies ColumnPreferences;
+
 function generateEntryId() {
   return Math.random().toString(36).slice(2);
 }
@@ -80,7 +114,9 @@ export function useSmartBudgetingController() {
   const {
     allBudgetedPlannedExpenses,
     categories,
+    budgetMonthMap,
     transactions,
+    profile,
     addPlannedExpense,
     updatePlannedExpense,
     updateCategory,
@@ -101,6 +137,61 @@ export function useSmartBudgetingController() {
   const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
   const [selectedYear, setSelectedYear] = useState(defaultYear);
   const [selectedCategoryId, setSelectedCategoryId] = useState<'all' | string>('all');
+  const [columnPreferences, setColumnPreferences] = useState<ColumnPreferences>(() => ({
+    order: [...DEFAULT_COLUMN_PREFERENCES.order],
+    visible: { ...DEFAULT_COLUMN_PREFERENCES.visible },
+    widths: { ...DEFAULT_COLUMN_PREFERENCES.widths }
+  }));
+
+  const visibleColumns = useMemo(
+    () => columnPreferences.order.filter((key) => columnPreferences.visible[key]),
+    [columnPreferences.order, columnPreferences.visible]
+  );
+
+  const gridTemplateColumns = useMemo(
+    () => visibleColumns.map((key) => columnPreferences.widths[key] ?? 'minmax(0,1fr)').join(' '),
+    [columnPreferences.widths, visibleColumns]
+  );
+
+  const toggleColumnVisibility = useCallback((column: SmartBudgetingColumnKey) => {
+    setColumnPreferences((previous) => {
+      const nextVisible = { ...previous.visible, [column]: !previous.visible[column] };
+      const visibleCount = previous.order.reduce(
+        (count, key) => count + (nextVisible[key] ? 1 : 0),
+        0
+      );
+      if (visibleCount === 0) {
+        return previous;
+      }
+      return { ...previous, visible: nextVisible };
+    });
+  }, []);
+
+  const resetColumnPreferences = useCallback(() => {
+    setColumnPreferences({
+      order: [...DEFAULT_COLUMN_PREFERENCES.order],
+      visible: { ...DEFAULT_COLUMN_PREFERENCES.visible },
+      widths: { ...DEFAULT_COLUMN_PREFERENCES.widths }
+    });
+  }, []);
+
+  const setColumnWidth = useCallback((column: SmartBudgetingColumnKey, width: string) => {
+    setColumnPreferences((previous) => ({
+      ...previous,
+      widths: { ...previous.widths, [column]: width || previous.widths[column] }
+    }));
+  }, []);
+
+  const setColumnOrder = useCallback((nextOrder: SmartBudgetingColumnKey[]) => {
+    const uniqueKeys = Array.from(new Set(nextOrder));
+    if (uniqueKeys.length !== DEFAULT_COLUMN_PREFERENCES.order.length) {
+      return;
+    }
+    setColumnPreferences((previous) => ({
+      ...previous,
+      order: uniqueKeys
+    }));
+  }, []);
 
   const periodLabel = useMemo(
     () => (viewMode === 'monthly' ? formatMonthLabel(selectedMonth) : selectedYear),
@@ -1053,6 +1144,178 @@ export function useSmartBudgetingController() {
   const baselineLabel = viewMode === 'monthly' ? 'Monthly baseline (₹)' : 'Yearly baseline (₹)';
   const hasNavigatorResults = expenseCategoryTree.length > 0 || visibleUncategorisedDetails.length > 0;
 
+  const tableConfig = useMemo(
+    () => ({
+      columnPreferences,
+      visibleColumns,
+      gridTemplateColumns,
+      toggleColumnVisibility,
+      resetColumnPreferences,
+      setColumnOrder,
+      setColumnWidth
+    }),
+    [
+      columnPreferences,
+      gridTemplateColumns,
+      resetColumnPreferences,
+      setColumnOrder,
+      setColumnWidth,
+      toggleColumnVisibility,
+      visibleColumns
+    ]
+  );
+
+  const schema = useMemo(() => {
+    const categoryEntities = Object.fromEntries(categories.map((category) => [category.id, category]));
+    const plannedExpenseEntities = Object.fromEntries(
+      allBudgetedPlannedExpenses.map((item) => [item.id, item])
+    );
+    const transactionEntities = Object.fromEntries(transactions.map((txn) => [txn.id, txn]));
+    const budgetMonthEntities = Object.fromEntries(
+      Object.entries(budgetMonthMap).map(([key, month]) => [
+        key,
+        {
+          month: key,
+          plannedExpenses: month.plannedItems.map((item) => item.id),
+          plannedItems: [],
+          actuals: month.actuals.map((item) => item.id),
+          unassignedActuals: month.unassignedActuals.map((item) => item.id),
+          adjustments: month.adjustments.map((item) => item.id),
+          recurringAllocations: month.recurringAllocations.map((item) => item.id),
+          rollovers: Array.isArray((month as unknown as { rollovers?: { id: string }[] }).rollovers)
+            ? ((month as unknown as { rollovers: { id: string }[] }).rollovers.map((entry) => entry.id))
+            : [],
+          totals: month.totals
+        }
+      ])
+    );
+    const plannedExpenseIdsByCategory = Object.fromEntries(
+      Array.from(itemsByCategory.entries()).map(([key, list]) => [
+        key,
+        list.map((detail) => detail.item.id)
+      ])
+    );
+    const categorySummariesIndex = Object.fromEntries(
+      Array.from(categorySummaries.entries()).map(([key, summary]) => [key, { ...summary }])
+    );
+    const categoryDescendantsIndex = Object.fromEntries(
+      Array.from(expenseDescendantsMap.entries()).map(([key, set]) => [key, Array.from(set)])
+    );
+    const nextDueByCategory = Object.fromEntries(
+      Array.from(itemsByCategory.entries())
+        .map(([key, list]) => {
+          const next = list
+            .filter((detail) => Boolean(detail.item.dueDate))
+            .reduce<PlannedExpenseDetail | null>((closest, detail) => {
+              if (!detail.item.dueDate) return closest;
+              if (!closest || !closest.item.dueDate) {
+                return detail;
+              }
+              const currentTime = new Date(detail.item.dueDate).getTime();
+              const closestTime = new Date(closest.item.dueDate).getTime();
+              return currentTime < closestTime ? detail : closest;
+            }, null);
+          if (!next || !next.item.dueDate) {
+            return null;
+          }
+          return [key, { plannedExpenseId: next.item.id, dueDate: next.item.dueDate }];
+        })
+        .filter((entry): entry is [string, { plannedExpenseId: string; dueDate: string }] => Boolean(entry))
+    );
+    const tablePeriod =
+      viewMode === 'monthly'
+        ? { mode: 'monthly' as const, month: selectedMonth }
+        : { mode: 'yearly' as const, year: selectedYear };
+    return {
+      entities: {
+        categories: categoryEntities,
+        plannedExpenses: plannedExpenseEntities,
+        transactions: transactionEntities,
+        budgetMonths: budgetMonthEntities
+      },
+      collections: {
+        budgetMonthByPeriod: {
+          [`monthly:${selectedMonth}`]: selectedMonth,
+          [`yearly:${selectedYear}`]: selectedYear
+        }
+      },
+      indices: {
+        plannedExpenseIdsByCategory,
+        categorySummaries: categorySummariesIndex,
+        categoryDescendants: categoryDescendantsIndex,
+        nextDueByCategory
+      },
+      views: {
+        smartBudgetingTable: {
+          period: tablePeriod,
+          rows: categoriesWithContent.map((category) => category.id),
+          visibleDetailIds: plannedExpenseDetails.map((detail) => detail.item.id),
+          columnOrder: [...columnPreferences.order]
+        }
+      },
+      uiState: {
+        smartBudgeting: {
+          period: {
+            viewMode,
+            selectedMonth,
+            selectedYear,
+            focusedCategoryId
+          },
+          filters: {
+            navigatorFilter,
+            navigatorView,
+            searchTerm: categorySearchTerm,
+            selectedCategoryId
+          },
+          dialog: {
+            isOpen: isAddExpenseDialogOpen,
+            entries: plannedEntries,
+            hasAttemptedSubmit,
+            categoryCreationTargetId,
+            newCategoryName
+          },
+          columnPreferences: {
+            order: [...columnPreferences.order],
+            visible: { ...columnPreferences.visible },
+            widths: { ...columnPreferences.widths }
+          },
+          editing: {
+            editingItemId,
+            draft: editDraft,
+            quickActualDrafts: { ...quickActualDrafts }
+          }
+        }
+      }
+    };
+  }, [
+    allBudgetedPlannedExpenses,
+    budgetMonthMap,
+    categories,
+    categoriesWithContent,
+    categoryCreationTargetId,
+    categorySearchTerm,
+    categorySummaries,
+    columnPreferences.order,
+    columnPreferences.visible,
+    columnPreferences.widths,
+    editDraft,
+    expenseDescendantsMap,
+    focusedCategoryId,
+    hasAttemptedSubmit,
+    isAddExpenseDialogOpen,
+    itemsByCategory,
+    navigatorFilter,
+    navigatorView,
+    plannedEntries,
+    plannedExpenseDetails,
+    quickActualDrafts,
+    selectedCategoryId,
+    selectedMonth,
+    selectedYear,
+    transactions,
+    viewMode
+  ]);
+
   return {
     utils: {
       formatCurrency,
@@ -1177,7 +1440,9 @@ export function useSmartBudgetingController() {
       handleSaveEdit,
       deletePlannedExpense,
       updatePlannedExpense
-    }
+    },
+    table: tableConfig,
+    schema
   };
 }
 

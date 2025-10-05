@@ -1,28 +1,15 @@
-import { useCallback, useRef } from 'react';
+import { useId } from 'react';
 import type { SmartBudgetingController } from '../hooks/useSmartBudgetingController';
 
 interface SummaryHeaderControlsProps {
   period: SmartBudgetingController['period'];
+  table: SmartBudgetingController['table'];
   onOpenDialog: () => void;
   onExpandAll: () => void;
   onCollapseAll: () => void;
 }
 
-export function SummaryHeaderControls({ period, onOpenDialog, onExpandAll, onCollapseAll }: SummaryHeaderControlsProps) {
-  const monthInputRef = useRef<HTMLInputElement | null>(null);
-
-  const openMonthPicker = useCallback(() => {
-    if (!monthInputRef.current) {
-      return;
-    }
-    const enhancedInput = monthInputRef.current as HTMLInputElement & { showPicker?: () => void };
-    if (typeof enhancedInput.showPicker === 'function') {
-      enhancedInput.showPicker();
-      return;
-    }
-    enhancedInput.focus();
-  }, []);
-
+export function SummaryHeaderControls({ period, table, onOpenDialog, onExpandAll, onCollapseAll }: SummaryHeaderControlsProps) {
   const {
     viewMode,
     handleViewModeChange,
@@ -35,6 +22,15 @@ export function SummaryHeaderControls({ period, onOpenDialog, onExpandAll, onCol
     handleMonthInputChange,
     handleYearInputChange
   } = period;
+  const columnLabels: Record<SmartBudgetingController['table']['columnPreferences']['order'][number], string> = {
+    category: 'Category / Planned items',
+    earliestDue: 'Earliest due date',
+    planned: 'Planned amount',
+    actual: 'Actual amount',
+    variance: 'Variance / remaining',
+    actions: 'Actions'
+  } as const;
+  const columnMenuId = useId();
 
   return (
     <header className="flex flex-col gap-4 rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4 shadow-lg shadow-slate-950/10">
@@ -186,6 +182,42 @@ export function SummaryHeaderControls({ period, onOpenDialog, onExpandAll, onCol
               <path d="M5 12h14" />
             </svg>
           </button>
+          <details className="relative">
+            <summary
+              className="flex cursor-pointer list-none items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500"
+              aria-haspopup="menu"
+              aria-controls={columnMenuId}
+            >
+              Columns
+              <span aria-hidden className="text-[10px] text-slate-500">({table.visibleColumns.length})</span>
+            </summary>
+            <div
+              id={columnMenuId}
+              className="absolute right-0 z-10 mt-2 w-64 space-y-3 rounded-lg border border-slate-800 bg-slate-950/90 p-3 text-xs text-slate-200 shadow-xl shadow-slate-950/40"
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Visible columns</p>
+              <div className="space-y-2">
+                {table.columnPreferences.order.map((column) => (
+                  <label key={column} className="flex items-center justify-between gap-3 text-xs text-slate-200">
+                    <span>{columnLabels[column]}</span>
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-accent focus:ring-accent"
+                      checked={table.columnPreferences.visible[column]}
+                      onChange={() => table.toggleColumnVisibility(column)}
+                    />
+                  </label>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={table.resetColumnPreferences}
+                className="w-full rounded-md border border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
+              >
+                Reset to default
+              </button>
+            </div>
+          </details>
         </div>
       </div>
     </header>
