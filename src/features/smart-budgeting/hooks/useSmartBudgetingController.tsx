@@ -377,13 +377,15 @@ export function useSmartBudgetingController() {
 
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({
+    name: '',
     categoryId: '',
     plannedAmount: '',
     actualAmount: '',
     remainderAmount: '',
     dueDate: '',
     hasDueDate: true,
-    priority: 'medium' as PlannedExpenseItem['priority']
+    priority: 'medium' as PlannedExpenseItem['priority'],
+    status: 'pending' as PlannedExpenseItem['status']
   });
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [quickActualDrafts, setQuickActualDrafts] = useState<Record<string, string>>({});
@@ -989,6 +991,7 @@ export function useSmartBudgetingController() {
         ? detail.remainder
         : undefined;
     setEditDraft({
+      name: detail.item.name,
       categoryId: detail.item.categoryId,
       plannedAmount: String(detail.item.plannedAmount),
       actualAmount:
@@ -1001,20 +1004,23 @@ export function useSmartBudgetingController() {
         remainderSource !== undefined && remainderSource > 0 ? String(remainderSource) : '',
       dueDate: detail.item.dueDate ?? fallbackDate,
       hasDueDate: Boolean(detail.item.dueDate),
-      priority: detail.item.priority ?? 'medium'
+      priority: detail.item.priority ?? 'medium',
+      status: detail.item.status ?? 'pending'
     });
   };
 
   const handleCancelEdit = () => {
     setEditingItemId(null);
     setEditDraft({
+      name: '',
       categoryId: '',
       plannedAmount: '',
       actualAmount: '',
       remainderAmount: '',
       dueDate: '',
       hasDueDate: true,
-      priority: 'medium'
+      priority: 'medium',
+      status: 'pending'
     });
   };
 
@@ -1041,13 +1047,14 @@ export function useSmartBudgetingController() {
   };
 
   const handleSaveEdit = async (detail: PlannedExpenseDetail) => {
+    const trimmedName = editDraft.name.trim();
     const plannedValue = Number(editDraft.plannedAmount);
     const trimmedActual = editDraft.actualAmount.trim();
     const actualValue = trimmedActual === '' ? undefined : Number(trimmedActual);
     const trimmedRemainder = editDraft.remainderAmount.trim();
     const remainderValue = trimmedRemainder === '' ? null : Number(trimmedRemainder);
     const requiresDueDate = editDraft.hasDueDate && editDraft.dueDate.trim() === '';
-    if (!editDraft.categoryId || Number.isNaN(plannedValue) || plannedValue < 0) {
+    if (!trimmedName || !editDraft.categoryId || Number.isNaN(plannedValue) || plannedValue < 0) {
       return;
     }
     if (actualValue !== undefined && (Number.isNaN(actualValue) || actualValue < 0)) {
@@ -1066,24 +1073,28 @@ export function useSmartBudgetingController() {
         nextActualValue = Math.max(plannedValue - remainderValue, 0);
       }
       await updatePlannedExpense(detail.item.id, {
+        name: trimmedName,
         categoryId: editDraft.categoryId,
         plannedAmount: plannedValue,
         actualAmount: nextActualValue,
         remainderAmount: remainderValue,
         priority: editDraft.priority,
+        status: editDraft.status,
         dueDate: editDraft.hasDueDate
           ? editDraft.dueDate || detail.item.dueDate || formatISO(new Date(), { representation: 'date' })
           : null
       });
       setEditingItemId(null);
       setEditDraft({
+        name: '',
         categoryId: '',
         plannedAmount: '',
         actualAmount: '',
         remainderAmount: '',
         dueDate: '',
         hasDueDate: true,
-        priority: 'medium'
+        priority: 'medium',
+        status: 'pending'
       });
     } finally {
       setSavingItemId(null);

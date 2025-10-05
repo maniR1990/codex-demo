@@ -1,7 +1,13 @@
 import { formatISO } from 'date-fns';
-import { FormEvent } from 'react';
 import type { PlannedExpenseItem } from '../../../types';
 import type { PlannedExpenseDetail, SmartBudgetingController } from '../hooks/useSmartBudgetingController';
+
+const STATUS_OPTIONS: Array<{ value: PlannedExpenseItem['status']; label: string }> = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'purchased', label: 'Purchased' },
+  { value: 'reconciled', label: 'Reconciled' },
+  { value: 'cancelled', label: 'Cancelled' }
+];
 
 interface PlannedExpenseItemCardProps {
   detail: PlannedExpenseDetail;
@@ -29,53 +35,40 @@ export function PlannedExpenseItemCard({
     editDraft,
     setEditDraft,
     savingItemId,
-    quickActualDrafts,
-    quickActualSavingId,
     handleStartEdit,
     handleCancelEdit,
-    handleQuickActualChange,
-    handleQuickActualSubmit,
     handleSaveEdit,
-    deletePlannedExpense,
-    updatePlannedExpense
+    deletePlannedExpense
   } = editing;
 
   const categoryName = categories.lookup.get(detail.item.categoryId)?.name ?? 'Uncategorised';
-
   const isEditing = editingItemId === detail.item.id;
   const isSaving = savingItemId === detail.item.id;
   const dueDateLabel = detail.item.dueDate
     ? new Date(detail.item.dueDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
     : 'No due date';
-  const progressPercentRaw =
-    detail.item.plannedAmount <= 0
-      ? detail.actual > 0
-        ? 100
-        : 0
-      : (detail.actual / detail.item.plannedAmount) * 100;
-  const progressPercent = Number.isFinite(progressPercentRaw) ? progressPercentRaw : 0;
-  const progressColor = utils.PROGRESS_COLOR_BY_STATUS[detail.status];
-  const varianceLabel = detail.variance >= 0 ? 'Saved' : 'Overspent';
-  const statusToken = utils.SPENDING_BADGE_STYLES[detail.status];
-  const priorityToken = utils.PRIORITY_TOKEN_STYLES[detail.priority ?? 'medium'];
-  const actualToneClass = statusToken.toneClass;
-  const actualBackgroundClass =
-    detail.status === 'over'
-      ? 'bg-danger/10'
-      : detail.status === 'under'
-      ? 'bg-success/10'
-      : 'bg-slate-950/80';
   const fallbackDueDate =
     detail.item.dueDate ?? formatISO(new Date(detail.item.createdAt), { representation: 'date' });
+  const statusLabel =
+    STATUS_OPTIONS.find((option) => option.value === detail.item.status)?.label ?? 'Pending';
   const remainderValue = detail.remainder;
   const remainderLabel = remainderValue >= 0 ? 'Remaining' : 'Overspent';
   const remainderDisplay = Math.abs(remainderValue);
+
+  const indentationStyle = { paddingLeft: depth * 20 };
+  const rowToneClass = isEditing
+    ? 'bg-slate-950/60 ring-1 ring-inset ring-accent/40'
+    : isFocused
+    ? 'bg-slate-900/60 ring-1 ring-inset ring-accent/30'
+    : 'bg-slate-950/25 hover:bg-slate-900/55';
+
   const isCurrentCategoryMissing =
     isEditing && editDraft.categoryId && !categories.options.some((option) => option.id === editDraft.categoryId);
   const parsedPlanned = Number(editDraft.plannedAmount);
   const parsedActual = editDraft.actualAmount.trim() === '' ? undefined : Number(editDraft.actualAmount);
   const parsedRemainder = editDraft.remainderAmount.trim() === '' ? null : Number(editDraft.remainderAmount);
   const isRemainderProvided = editDraft.remainderAmount.trim() !== '';
+  const hasNameError = isEditing && editDraft.name.trim() === '';
   const hasPlannedError = isEditing && (Number.isNaN(parsedPlanned) || parsedPlanned < 0);
   const hasActualError =
     isEditing &&
@@ -89,6 +82,7 @@ export function PlannedExpenseItemCard({
   const requiresDueDate = isEditing && editDraft.hasDueDate && editDraft.dueDate.trim() === '';
   const isSaveDisabled =
     !isEditing ||
+    hasNameError ||
     !editDraft.categoryId ||
     editDraft.plannedAmount.trim() === '' ||
     hasPlannedError ||
@@ -96,68 +90,36 @@ export function PlannedExpenseItemCard({
     hasRemainderError ||
     requiresDueDate ||
     isSaving;
-  const quickActualDraft = quickActualDrafts[detail.item.id] ?? '';
-  const quickActualTrimmed = quickActualDraft.trim();
-  const quickActualValue = quickActualTrimmed === '' ? undefined : Number(quickActualTrimmed);
-  const hasQuickActualError =
-    quickActualValue !== undefined && (Number.isNaN(quickActualValue) || quickActualValue < 0);
-  const isQuickSaving = quickActualSavingId === detail.item.id;
-  const quickPlaceholder =
-    typeof detail.item.actualAmount === 'number' && !Number.isNaN(detail.item.actualAmount)
-      ? String(detail.item.actualAmount)
-      : detail.actual > 0
-      ? String(detail.actual)
-      : '';
-  const infoMessage =
-    typeof detail.item.actualAmount === 'number' && !Number.isNaN(detail.item.actualAmount)
-      ? `Manual spend recorded: ${utils.formatCurrency(detail.actual)}.`
-      : detail.match
-      ? `Matched with ${detail.match.description} on ${new Date(detail.match.date).toLocaleDateString('en-IN')}`
-      : 'No matching transaction yet — update spent once the payment is made.';
-  const remainderColor = detail.variance >= 0 ? 'text-success' : 'text-danger';
 
-  const handleSubmitQuickActual = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!hasQuickActualError && quickActualValue !== undefined && !isQuickSaving) {
-      void handleQuickActualSubmit(detail);
+  const handleRowClick = () => {
+    if (!isEditing) {
+      handleStartEdit(detail);
     }
   };
-
-  const indentationStyle = { paddingLeft: depth * 20 };
-
-  const rowToneClass = isEditing
-    ? 'bg-slate-950/60 ring-1 ring-inset ring-accent/40'
-    : isFocused
-    ? 'bg-slate-900/60 ring-1 ring-inset ring-accent/30'
-    : 'bg-slate-950/25 hover:bg-slate-900/55';
 
   return (
     <div
       ref={rowRef}
-      className={`group/row grid items-start gap-4 border-t border-slate-800/60 px-4 py-3 text-[11px] sm:text-xs transition ${rowToneClass}`}
+      className={`grid items-start gap-4 border-t border-slate-800/60 px-4 py-3 text-[11px] sm:text-xs transition ${rowToneClass}`}
       style={{ gridTemplateColumns: table.gridTemplateColumns }}
+      onClick={handleRowClick}
     >
       {table.visibleColumns.map((column) => {
         switch (column) {
           case 'category':
             return (
-              <div key={`${detail.item.id}-${column}`} className="min-w-0 space-y-2" style={indentationStyle}>
-                <p className="truncate text-sm font-semibold text-slate-100" title={categoryName}>
-                  {categoryName}
-                </p>
-                {isEditing && (
-                  <div className="space-y-1">
+              <div key={`${detail.item.id}-${column}`} className="flex flex-col gap-1" style={indentationStyle}>
+                {isEditing ? (
+                  <>
                     <label className="text-[10px] uppercase text-slate-500">Category</label>
                     <select
-                      className="w-full rounded-md border border-slate-700 bg-slate-950/80 px-3 py-1.5 text-xs text-slate-100 focus:border-accent focus:outline-none"
+                      className="w-full rounded-md border border-slate-700 bg-slate-950/80 px-2 py-1.5 text-xs text-slate-100 focus:border-accent focus:outline-none"
                       value={editDraft.categoryId}
                       onChange={(event) => setEditDraft((prev) => ({ ...prev, categoryId: event.target.value }))}
                       disabled={isSaving}
                     >
                       {isCurrentCategoryMissing && (
-                        <option value={detail.item.categoryId}>
-                          {categoryName}
-                        </option>
+                        <option value={detail.item.categoryId}>{categoryName}</option>
                       )}
                       {categories.options.map((option) => (
                         <option key={option.id} value={option.id}>
@@ -170,42 +132,46 @@ export function PlannedExpenseItemCard({
                         The original category is no longer available. Pick another one before saving.
                       </p>
                     )}
-                  </div>
+                  </>
+                ) : (
+                  <span className="truncate text-sm font-semibold text-slate-100" title={categoryName}>
+                    {categoryName}
+                  </span>
                 )}
               </div>
             );
           case 'item':
             return (
-              <div key={`${detail.item.id}-${column}`} className="min-w-0 space-y-2">
-                <p className="truncate text-sm font-semibold text-slate-100">{detail.item.name}</p>
-                <p className="truncate text-[10px] text-slate-500" title={infoMessage}>
-                  {infoMessage}
-                </p>
-                <div className="flex items-center gap-2">
-                  <div className="h-1.5 w-full flex-1 overflow-hidden rounded-full bg-slate-800">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${Math.max(0, Math.min(100, progressPercent))}%`,
-                        backgroundColor: progressColor
-                      }}
+              <div key={`${detail.item.id}-${column}`} className="flex flex-col gap-1">
+                {isEditing ? (
+                  <>
+                    <label className="text-[10px] uppercase text-slate-500">Item name</label>
+                    <input
+                      type="text"
+                      className={`w-full rounded-md border bg-slate-950/80 px-2 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
+                        hasNameError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
+                      }`}
+                      value={editDraft.name}
+                      onChange={(event) => setEditDraft((prev) => ({ ...prev, name: event.target.value }))}
+                      disabled={isSaving}
                     />
-                  </div>
-                  <p className="text-[10px] text-slate-500">
-                    {remainderLabel}: {utils.formatCurrency(remainderDisplay)}
-                  </p>
-                </div>
+                    {hasNameError && <p className="text-[10px] text-danger">Enter an item name.</p>}
+                  </>
+                ) : (
+                  <span className="truncate text-sm font-semibold text-slate-100">{detail.item.name}</span>
+                )}
               </div>
             );
           case 'planned':
             return (
-              <div key={`${detail.item.id}-${column}`} className="text-right">
+              <div key={`${detail.item.id}-${column}`} className="flex flex-col gap-1 text-right">
                 {isEditing ? (
-                  <div className="space-y-1">
+                  <>
+                    <label className="text-[10px] uppercase text-slate-500 text-left">Planned amount</label>
                     <input
                       type="number"
                       min={0}
-                      className={`w-full rounded-md border bg-slate-950/80 px-3 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
+                      className={`w-full rounded-md border bg-slate-950/80 px-2 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
                         hasPlannedError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
                       }`}
                       value={editDraft.plannedAmount}
@@ -213,25 +179,25 @@ export function PlannedExpenseItemCard({
                       disabled={isSaving}
                     />
                     {hasPlannedError && <p className="text-[10px] text-danger">Enter a valid planned amount.</p>}
-                  </div>
+                  </>
                 ) : (
-                  <div className="space-y-1">
-                    <div className="text-sm font-semibold text-warning">{utils.formatCurrency(detail.item.plannedAmount)}</div>
-                    <div className="text-[10px] text-slate-500">Planned</div>
-                  </div>
+                  <span className="text-sm font-semibold text-slate-100">
+                    {utils.formatCurrency(detail.item.plannedAmount)}
+                  </span>
                 )}
               </div>
             );
           case 'actual':
             return (
-              <div key={`${detail.item.id}-${column}`} className="space-y-2 text-right">
+              <div key={`${detail.item.id}-${column}`} className="flex flex-col gap-1 text-right">
                 {isEditing ? (
-                  <div className="space-y-1">
+                  <>
+                    <label className="text-[10px] uppercase text-slate-500 text-left">Actual spent</label>
                     <input
                       type="number"
                       min={0}
-                      placeholder="Auto from transactions"
-                      className={`w-full rounded-md border bg-slate-950/80 px-3 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
+                      placeholder="Leave blank to use remaining"
+                      className={`w-full rounded-md border bg-slate-950/80 px-2 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
                         hasActualError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
                       }`}
                       value={editDraft.actualAmount}
@@ -239,91 +205,64 @@ export function PlannedExpenseItemCard({
                       disabled={isRemainderProvided || isSaving}
                     />
                     {hasActualError && <p className="text-[10px] text-danger">Enter a valid spent amount.</p>}
-                  </div>
+                    {isRemainderProvided && (
+                      <p className="text-[10px] text-slate-500">Clear remaining amount to edit spent.</p>
+                    )}
+                  </>
                 ) : (
-                  <div className={`space-y-1 rounded-md border border-slate-800/70 px-3 py-1.5 text-right ${actualBackgroundClass}`}>
-                    <div className={`text-sm font-semibold ${actualToneClass}`}>{utils.formatCurrency(detail.actual)}</div>
-                    <div className="text-[10px] text-slate-500">Spent</div>
-                  </div>
-                )}
-                {!isEditing && (
-                  <form className="flex w-full items-center justify-end gap-2" onSubmit={handleSubmitQuickActual}>
-                    <input
-                      type="number"
-                      min={0}
-                      value={quickActualDraft}
-                      onChange={(event) => handleQuickActualChange(detail.item.id, event.target.value)}
-                      placeholder={quickPlaceholder || 'Spent'}
-                      className={`w-24 rounded-md border bg-slate-950/80 px-2 py-1 text-xs text-slate-100 focus:border-accent focus:outline-none ${
-                        hasQuickActualError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
-                      }`}
-                    />
-                    <button
-                      type="submit"
-                      disabled={hasQuickActualError || quickActualValue === undefined || isQuickSaving}
-                      className="rounded-md bg-accent px-2 py-1 text-[11px] font-semibold text-slate-900 transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isQuickSaving ? 'Saving…' : 'Save'}
-                    </button>
-                  </form>
-                )}
-                {hasQuickActualError && !isEditing && (
-                  <p className="text-[10px] text-danger">Enter a valid amount to save.</p>
+                  <span className="text-sm font-semibold text-slate-100">
+                    {utils.formatCurrency(detail.actual)}
+                  </span>
                 )}
               </div>
             );
           case 'variance':
             return (
-              <div key={`${detail.item.id}-${column}`} className="space-y-2 text-right">
-                <div className={`text-sm font-semibold ${remainderColor}`}>{utils.formatCurrency(detail.variance)}</div>
-                <div className="text-[10px] text-slate-500">{varianceLabel}</div>
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusToken.badgeClass}`}>
-                  {statusToken.label}
+              <div key={`${detail.item.id}-${column}`} className="flex flex-col gap-1 text-right">
+                <span className={`text-sm font-semibold ${detail.variance >= 0 ? 'text-success' : 'text-danger'}`}>
+                  {utils.formatCurrency(detail.variance)}
                 </span>
-                {isEditing && (
-                  <div className="space-y-1 text-right">
-                    <label className="block text-[10px] uppercase text-slate-500">Remaining amount</label>
+                <span className="text-[10px] text-slate-500">{remainderLabel}</span>
+                {isEditing ? (
+                  <>
+                    <label className="text-left text-[10px] uppercase text-slate-500">Remaining amount</label>
                     <input
                       type="number"
                       min={0}
                       placeholder="Leave blank to edit spent"
-                      className={`w-full rounded-md border bg-slate-950/80 px-3 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
+                      className={`w-full rounded-md border bg-slate-950/80 px-2 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
                         hasRemainderError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
                       }`}
                       value={editDraft.remainderAmount}
                       onChange={(event) => setEditDraft((prev) => ({ ...prev, remainderAmount: event.target.value }))}
                       disabled={isSaving}
                     />
-                    <p className="text-[10px] text-slate-500">Leave empty to enter the spent amount manually.</p>
                     {hasRemainderError && (
                       <p className="text-[10px] text-danger">Enter a valid remaining amount or clear the field.</p>
                     )}
-                  </div>
+                  </>
+                ) : (
+                  <span className="text-[10px] text-slate-500">
+                    {remainderLabel}: {utils.formatCurrency(remainderDisplay)}
+                  </span>
                 )}
               </div>
             );
           case 'due':
             return (
-              <div key={`${detail.item.id}-${column}`} className="flex flex-col justify-center gap-2 text-xs text-slate-300">
+              <div key={`${detail.item.id}-${column}`} className="flex flex-col gap-1 text-left">
                 {isEditing ? (
-                  <div className="space-y-2">
-                    <span className="text-sm font-semibold text-slate-100">
-                      {editDraft.hasDueDate && editDraft.dueDate
-                        ? new Date(editDraft.dueDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
-                        : 'No due date'}
-                    </span>
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase text-slate-500">Due date</label>
-                      <input
-                        type="date"
-                        className={`w-full rounded-md border bg-slate-950/80 px-3 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 ${
-                          requiresDueDate ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
-                        }`}
-                        value={editDraft.dueDate}
-                        onChange={(event) => setEditDraft((prev) => ({ ...prev, dueDate: event.target.value }))}
-                        disabled={!editDraft.hasDueDate || isSaving}
-                      />
-                    </div>
+                  <>
+                    <label className="text-[10px] uppercase text-slate-500">Due date</label>
+                    <input
+                      type="date"
+                      className={`w-full rounded-md border bg-slate-950/80 px-2 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 ${
+                        requiresDueDate ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
+                      }`}
+                      value={editDraft.dueDate}
+                      onChange={(event) => setEditDraft((prev) => ({ ...prev, dueDate: event.target.value }))}
+                      disabled={!editDraft.hasDueDate || isSaving}
+                    />
                     <label className="flex items-center gap-2 text-[10px] text-slate-400">
                       <input
                         type="checkbox"
@@ -344,7 +283,7 @@ export function PlannedExpenseItemCard({
                     {requiresDueDate && (
                       <p className="text-[10px] text-danger">Select a due date or mark the item as having no due date.</p>
                     )}
-                  </div>
+                  </>
                 ) : (
                   <span className="text-sm font-semibold text-slate-100">{dueDateLabel}</span>
                 )}
@@ -352,55 +291,42 @@ export function PlannedExpenseItemCard({
             );
           case 'status':
             return (
-              <div key={`${detail.item.id}-${column}`} className="space-y-2 text-left">
-                <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
-                  {utils.statusBadge(detail.item.status)}
-                  <span className={`rounded-full px-2 py-0.5 font-semibold ${statusToken.badgeClass}`}>
-                    {statusToken.label}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1 text-[10px]">
-                  <button
-                    type="button"
-                    className="rounded-full bg-success/15 px-2 py-1 font-semibold text-success hover:bg-success/25"
-                    onClick={() => updatePlannedExpense(detail.item.id, { status: 'purchased' })}
-                  >
-                    Purchased
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-full bg-slate-800 px-2 py-1 text-slate-300 hover:bg-slate-700"
-                    onClick={() => updatePlannedExpense(detail.item.id, { status: 'cancelled' })}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-full bg-sky-500/15 px-2 py-1 font-semibold text-sky-300 hover:bg-sky-500/25"
-                    onClick={() => updatePlannedExpense(detail.item.id, { status: 'reconciled' })}
-                    disabled={detail.item.status === 'reconciled'}
-                  >
-                    Reconcile
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-full bg-danger/15 px-2 py-1 font-semibold text-danger hover:bg-danger/25"
-                    onClick={() => deletePlannedExpense(detail.item.id)}
-                  >
-                    Delete
-                  </button>
-                </div>
+              <div key={`${detail.item.id}-${column}`} className="flex flex-col gap-1 text-left">
+                {isEditing ? (
+                  <>
+                    <label className="text-[10px] uppercase text-slate-500">Status</label>
+                    <select
+                      className="w-full rounded-md border border-slate-700 bg-slate-950/80 px-2 py-1.5 text-xs text-slate-100 focus:border-accent focus:outline-none"
+                      value={editDraft.status}
+                      onChange={(event) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          status: event.target.value as PlannedExpenseItem['status']
+                        }))
+                      }
+                      disabled={isSaving}
+                    >
+                      {STATUS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                ) : (
+                  <span className="text-sm font-semibold text-slate-100">{statusLabel}</span>
+                )}
               </div>
             );
           case 'priority':
             return (
-              <div key={`${detail.item.id}-${column}`} className="space-y-2 text-left">
+              <div key={`${detail.item.id}-${column}`} className="flex flex-col gap-2 text-left">
                 {isEditing ? (
                   <>
-                    <div className="space-y-1">
+                    <div className="flex flex-col gap-1">
                       <label className="text-[10px] uppercase text-slate-500">Priority</label>
                       <select
-                        className="w-full rounded-md border border-slate-700 bg-slate-950/80 px-3 py-1.5 text-xs text-slate-100 focus:border-accent focus:outline-none"
+                        className="w-full rounded-md border border-slate-700 bg-slate-950/80 px-2 py-1.5 text-xs text-slate-100 focus:border-accent focus:outline-none"
                         value={editDraft.priority}
                         onChange={(event) =>
                           setEditDraft((prev) => ({
@@ -417,7 +343,7 @@ export function PlannedExpenseItemCard({
                         ))}
                       </select>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2 pt-1">
                       <button
                         type="button"
                         onClick={() => void handleSaveEdit(detail)}
@@ -434,21 +360,20 @@ export function PlannedExpenseItemCard({
                       >
                         Cancel
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => deletePlannedExpense(detail.item.id)}
+                        disabled={isSaving}
+                        className="rounded-md border border-danger/40 px-3 py-1 text-[11px] font-semibold text-danger hover:border-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Delete
+                      </button>
                     </div>
                   </>
                 ) : (
-                  <>
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${priorityToken.badgeClass}`}>
-                      {priorityToken.label}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleStartEdit(detail)}
-                      className="text-[11px] font-semibold text-accent hover:text-accent/80"
-                    >
-                      Edit details
-                    </button>
-                  </>
+                  <span className="text-sm font-semibold text-slate-100">
+                    {utils.PRIORITY_TOKEN_STYLES[detail.priority ?? 'medium'].label}
+                  </span>
                 )}
               </div>
             );
