@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, useRef } from 'react';
 import type { SmartBudgetingController } from '../hooks/useSmartBudgetingController';
 
 interface SummaryHeaderControlsProps {
@@ -31,6 +31,35 @@ export function SummaryHeaderControls({ period, table, onOpenDialog, onExpandAll
     actions: 'Actions'
   } as const;
   const columnMenuId = useId();
+  const monthInputRef = useRef<HTMLInputElement>(null);
+  const yearInputRef = useRef<HTMLInputElement>(null);
+
+  const openMonthPicker = () => {
+    if (viewMode !== 'monthly') {
+      handleViewModeChange('monthly');
+    }
+    if (typeof monthInputRef.current?.showPicker === 'function') {
+      monthInputRef.current.showPicker();
+      return;
+    }
+    monthInputRef.current?.focus();
+  };
+
+  const focusYearInput = () => {
+    if (viewMode !== 'yearly') {
+      handleViewModeChange('yearly');
+    }
+    yearInputRef.current?.focus();
+    yearInputRef.current?.select();
+  };
+
+  const handleOpenPeriodPicker = () => {
+    if (viewMode === 'monthly') {
+      openMonthPicker();
+      return;
+    }
+    focusYearInput();
+  };
 
   return (
     <header className="flex flex-col gap-4 rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4 shadow-lg shadow-slate-950/10">
@@ -65,77 +94,54 @@ export function SummaryHeaderControls({ period, table, onOpenDialog, onExpandAll
       </div>
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-stretch overflow-hidden rounded-lg border border-slate-700 bg-slate-950/70 text-sm text-slate-200 shadow-sm">
-          <div className="flex items-center gap-2 px-3 py-2">
-            <button
-              type="button"
-              onClick={goToPreviousPeriod}
-              className="rounded-md bg-slate-900/40 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:bg-slate-900/60 hover:text-accent"
-              aria-label="Previous period"
-            >
-              ‹
-            </button>
-            <span className="text-sm font-semibold text-slate-100">{periodLabel}</span>
-            <button
-              type="button"
-              onClick={goToNextPeriod}
-              className="rounded-md bg-slate-900/40 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:bg-slate-900/60 hover:text-accent"
-              aria-label="Next period"
-            >
-              ›
-            </button>
-          </div>
-          {viewMode === 'monthly' ? (
-            <div className="flex items-center border-l border-slate-700 bg-slate-950/60">
-              <button
-                type="button"
-                onClick={openMonthPicker}
-                className="flex h-full items-center px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-900/60 hover:text-accent"
-                aria-label="Select month"
-              >
-                <svg
-                  className="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                  <path d="M16 2v4" />
-                  <path d="M8 2v4" />
-                  <path d="M3 10h18" />
-                </svg>
-              </button>
-              <input
-                ref={monthInputRef}
-                type="month"
-                value={selectedMonth}
-                onChange={(event) => handleMonthInputChange(event.target.value)}
-                className="sr-only"
-                aria-label="Month picker"
-              />
-            </div>
-          ) : (
-            <div className="flex items-center border-l border-slate-700 bg-slate-950/60 px-3 py-2">
-              <label htmlFor="summary-year-input" className="sr-only">
-                Select year
-              </label>
-              <input
-                id="summary-year-input"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={4}
-                value={selectedYear}
-                onChange={(event) => handleYearInputChange(event.target.value)}
-                className="w-20 bg-transparent text-sm text-slate-100 placeholder-slate-500 focus:outline-none"
-              />
-            </div>
-          )}
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-200">
+          <button
+            type="button"
+            onClick={goToPreviousPeriod}
+            className="rounded-md border border-slate-700 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-accent"
+            aria-label="Previous period"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            onClick={handleOpenPeriodPicker}
+            className="rounded-md px-3 py-1 text-sm font-semibold text-slate-100 transition hover:bg-slate-800/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+            aria-label={viewMode === 'monthly' ? 'Select month' : 'Select year'}
+          >
+            {periodLabel}
+          </button>
+          <button
+            type="button"
+            onClick={goToNextPeriod}
+            className="rounded-md border border-slate-700 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-accent"
+            aria-label="Next period"
+          >
+            ›
+          </button>
         </div>
+        {viewMode === 'monthly' ? (
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(event) => handleMonthInputChange(event.target.value)}
+            ref={monthInputRef}
+            className="rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 focus:border-accent focus:outline-none"
+            aria-label="Select month"
+          />
+        ) : (
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={4}
+            value={selectedYear}
+            onChange={(event) => handleYearInputChange(event.target.value)}
+            ref={yearInputRef}
+            className="w-24 rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 focus:border-accent focus:outline-none"
+            aria-label="Select year"
+          />
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
