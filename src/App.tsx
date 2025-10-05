@@ -56,6 +56,10 @@ export default function App() {
     </>
   );
 
+  const navigationItems = NAV_LINKS.map((link) => (
+    <NavItem key={link.to} to={link.to} end={link.end} label={link.label} />
+  ));
+
   return (
     <AppShell
       header={
