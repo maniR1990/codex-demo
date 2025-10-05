@@ -1122,12 +1122,16 @@ export function SmartBudgetingView() {
     return (
       <div key={category.id} className={`border-t border-slate-800 ${dimClass}`}>
         <div
-          className={`grid grid-cols-[minmax(0,3fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(140px,0.8fr)] items-center gap-4 px-4 py-3 text-sm transition hover:bg-slate-900/50 ${focusClass}`}
+          onClick={() => focusCategory(category.id, true)}
+          className={`grid cursor-pointer grid-cols-[minmax(0,3fr)_minmax(140px,1fr)_minmax(140px,1fr)_minmax(160px,1fr)] items-center gap-4 px-4 py-3 text-sm transition hover:bg-slate-900/50 ${focusClass}`}
         >
           <div className="flex items-center gap-3" style={{ paddingLeft: indentation }}>
             <button
               type="button"
-              onClick={handleToggle}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleToggle();
+              }}
               aria-expanded={Boolean(isExpanded)}
               aria-disabled={!canExpand}
               className={`flex h-6 w-6 items-center justify-center rounded-md border border-slate-700 bg-slate-900/60 text-slate-400 transition ${
@@ -1160,19 +1164,6 @@ export function SmartBudgetingView() {
           <div className={`text-right text-sm font-semibold ${remainderClass}`}>
             <div>{formatCurrency(summary.variance)}</div>
             <span className="block text-[10px] font-semibold text-slate-400">{remainderDescriptor}</span>
-          </div>
-          <div className="flex justify-end text-[11px]">
-            {isFocused ? (
-              <span className="rounded-full bg-accent/20 px-2 py-0.5 font-semibold text-accent">In focus</span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => focusCategory(category.id, true)}
-                className="rounded-lg border border-slate-700 px-3 py-1 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
-              >
-                Focus
-              </button>
-            )}
           </div>
         </div>
         {isExpanded && (
@@ -1682,12 +1673,11 @@ export function SmartBudgetingView() {
           <div className="space-y-4">
             {renderedCategorySections.length > 0 && (
               <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/70">
-                <div className="grid grid-cols-[minmax(0,3fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(140px,0.8fr)] items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                <div className="grid grid-cols-[minmax(0,3fr)_minmax(140px,1fr)_minmax(140px,1fr)_minmax(160px,1fr)] items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                   <span>Category</span>
                   <span className="text-right">Planned</span>
                   <span className="text-right">Spent</span>
                   <span className="text-right">Remainder</span>
-                  <span className="text-right">Actions</span>
                 </div>
                 <div>{renderedCategorySections}</div>
               </div>
