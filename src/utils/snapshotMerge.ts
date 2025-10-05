@@ -1,5 +1,6 @@
 import type {
   Account,
+  BudgetMonth,
   Category,
   CategoryBudgets,
   ExportEvent,
@@ -24,6 +25,40 @@ const ensureTimestamps = <T extends Timestamped>(record: T, fallback: string): T
 
 const mapWithTimestamps = <T extends Timestamped>(items: T[] | undefined, fallback: string): T[] =>
   (items ?? []).map((item) => ensureTimestamps(item, fallback));
+
+const normaliseBudgetMonth = (month: BudgetMonth | undefined, key: string, fallback: string): BudgetMonth => {
+  const createdAt = month?.createdAt ?? fallback;
+  const updatedAt = month?.updatedAt ?? fallback;
+  return {
+    month: month?.month ?? key,
+    createdAt,
+    updatedAt,
+    plannedExpenses: mapWithTimestamps(month?.plannedExpenses, fallback),
+    recurringAllocations: mapWithTimestamps(month?.recurringAllocations, fallback),
+    rollovers: mapWithTimestamps(month?.rollovers, fallback),
+    unassignedActuals: mapWithTimestamps(month?.unassignedActuals, fallback),
+    totals: {
+      planned: month?.totals?.planned ?? 0,
+      actual: month?.totals?.actual ?? 0,
+      recurring: month?.totals?.recurring ?? 0,
+      rollover: month?.totals?.rollover ?? 0,
+      unassignedActuals: month?.totals?.unassignedActuals ?? 0,
+      variance: month?.totals?.variance ?? 0
+    }
+  } satisfies BudgetMonth;
+};
+
+const normaliseBudgetMonths = (
+  months: Record<string, BudgetMonth> | undefined,
+  fallback: string
+): Record<string, BudgetMonth> => {
+  const entries = Object.entries(months ?? {});
+  const normalised: Record<string, BudgetMonth> = {};
+  for (const [key, month] of entries) {
+    normalised[key] = normaliseBudgetMonth(month, key, fallback);
+  }
+  return normalised;
+};
 
 const normaliseBudgets = (budgets?: Category['budgets']): CategoryBudgets | undefined => {
   if (!budgets) return undefined;
@@ -72,6 +107,7 @@ export function normaliseSnapshot(snapshot?: Partial<FinancialSnapshot> | null):
     transactions: mapWithTimestamps<Transaction>(snapshot?.transactions, now),
     monthlyIncomes: mapWithTimestamps<MonthlyIncome>(snapshot?.monthlyIncomes, now),
     plannedExpenses: mapWithTimestamps<PlannedExpenseItem>(snapshot?.plannedExpenses, now),
+    budgetMonths: normaliseBudgetMonths(snapshot?.budgetMonths, now),
     recurringExpenses: mapWithTimestamps<RecurringExpense>(snapshot?.recurringExpenses, now),
     goals: mapWithTimestamps<Goal>(snapshot?.goals, now),
     insights: mapWithTimestamps<Insight>(snapshot?.insights, now),
@@ -107,6 +143,28 @@ export function mergeSnapshots(local: FinancialSnapshot, remote: FinancialSnapsh
     return local.profile.updatedAt >= remote.profile.updatedAt ? local.profile : remote.profile;
   })();
 
+  const mergeBudgetMonths = (
+    lhs: Record<string, BudgetMonth>,
+    rhs: Record<string, BudgetMonth>
+  ): Record<string, BudgetMonth> => {
+    const keys = new Set([...Object.keys(lhs), ...Object.keys(rhs)]);
+    const merged: Record<string, BudgetMonth> = {};
+    for (const key of keys) {
+      const left = lhs[key];
+      const right = rhs[key];
+      if (!left) {
+        merged[key] = right;
+        continue;
+      }
+      if (!right) {
+        merged[key] = left;
+        continue;
+      }
+      merged[key] = left.updatedAt >= right.updatedAt ? left : right;
+    }
+    return merged;
+  };
+
   return normaliseSnapshot({
     profile: profile ? { ...profile, currency: profile.currency ?? baseCurrency } : null,
     accounts: mergeCollections(local.accounts, remote.accounts),
@@ -114,6 +172,7 @@ export function mergeSnapshots(local: FinancialSnapshot, remote: FinancialSnapsh
     transactions: mergeCollections(local.transactions, remote.transactions),
     monthlyIncomes: mergeCollections(local.monthlyIncomes, remote.monthlyIncomes),
     plannedExpenses: mergeCollections(local.plannedExpenses, remote.plannedExpenses),
+    budgetMonths: mergeBudgetMonths(local.budgetMonths ?? {}, remote.budgetMonths ?? {}),
     recurringExpenses: mergeCollections(local.recurringExpenses, remote.recurringExpenses),
     goals: mergeCollections(local.goals, remote.goals),
     insights: mergeCollections(local.insights, remote.insights),

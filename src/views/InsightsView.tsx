@@ -3,7 +3,14 @@ import { differenceInCalendarDays, format, isValid, parseISO } from 'date-fns';
 import { useFinancialStore } from '../store/FinancialStoreProvider';
 
 export function InsightsView() {
-  const { insights, transactions, categories, profile, recurringExpenses, plannedExpenses } = useFinancialStore();
+  const {
+    insights,
+    transactions,
+    categories,
+    profile,
+    recurringExpenses,
+    allBudgetedPlannedExpenses
+  } = useFinancialStore();
   const [ruleReduction, setRuleReduction] = useState(15);
 
   const currencyFormatter = useMemo(
@@ -121,7 +128,7 @@ export function InsightsView() {
   }, [recurringExpenses, currencyFormatter]);
 
   const plannedExpenseSummary = useMemo(() => {
-    const pendingExpenses = plannedExpenses.filter((expense) => expense.status === 'pending');
+    const pendingExpenses = allBudgetedPlannedExpenses.filter((expense) => expense.status === 'pending');
     const totalPending = pendingExpenses.reduce((sum, item) => sum + item.plannedAmount, 0);
 
     const nextExpense = pendingExpenses
@@ -146,7 +153,7 @@ export function InsightsView() {
           }
         : null
     };
-  }, [plannedExpenses]);
+  }, [allBudgetedPlannedExpenses]);
 
   const actionableTiles = useMemo(() => {
     return [
