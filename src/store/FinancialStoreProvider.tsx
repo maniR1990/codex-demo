@@ -57,6 +57,13 @@ const sanitiseBudgets = (budgets?: Category['budgets']): Category['budgets'] | u
   return Object.keys(normalised).length ? normalised : undefined;
 };
 
+const normaliseOptionalNumber = (value: number | null | undefined): number | null => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return null;
+  }
+  return value;
+};
+
 interface InitialSetupPayload {
   currency: Profile['currency'];
   financialStartDate: string;

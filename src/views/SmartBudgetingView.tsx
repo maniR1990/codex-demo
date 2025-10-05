@@ -7,12 +7,12 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 }
 
-function monthKey(date: string) {
-  return date.slice(0, 7);
+function monthKey(date?: string | null) {
+  return date ? date.slice(0, 7) : '';
 }
 
-function yearKey(date: string) {
-  return date.slice(0, 4);
+function yearKey(date?: string | null) {
+  return date ? date.slice(0, 4) : '';
 }
 
 function formatMonthLabel(month: string) {
@@ -45,6 +45,20 @@ function defaultDueDateForPeriod(viewMode: 'monthly' | 'yearly', month: string, 
   const defaultDate = new Date(safeYear, today.getMonth(), today.getDate());
   return formatISO(defaultDate, { representation: 'date' });
 }
+
+const PRIORITY_TOKEN_STYLES: Record<PlannedExpenseItem['priority'], { label: string; badgeClass: string }> = {
+  high: { label: 'High priority', badgeClass: 'bg-danger/20 text-danger' },
+  medium: { label: 'Medium priority', badgeClass: 'bg-warning/20 text-warning' },
+  low: { label: 'Low priority', badgeClass: 'bg-slate-800 text-slate-300' }
+};
+
+const PRIORITY_OPTIONS: Array<{ value: PlannedExpenseItem['priority']; label: string }> = [
+  { value: 'high', label: 'High priority' },
+  { value: 'medium', label: 'Medium priority' },
+  { value: 'low', label: 'Low priority' }
+];
+
+const PRIORITY_ORDER: PlannedExpenseItem['priority'][] = ['high', 'medium', 'low'];
 
 export function SmartBudgetingView() {
   const {
@@ -120,7 +134,9 @@ export function SmartBudgetingView() {
     name: string;
     amount: string;
     dueDate: string;
+    hasDueDate: boolean;
     categoryId: string;
+    priority: PlannedExpenseItem['priority'];
   };
 
   const generateEntryId = () => Math.random().toString(36).slice(2);
@@ -144,7 +160,9 @@ export function SmartBudgetingView() {
     name: '',
     amount: '',
     dueDate: resolveDefaultDueDate(),
-    categoryId: categoryId ?? expenseCategories[0]?.id ?? ''
+    hasDueDate: true,
+    categoryId: categoryId ?? expenseCategories[0]?.id ?? '',
+    priority: 'medium'
   });
 
   const [plannedEntries, setPlannedEntries] = useState<PlannedExpenseDraft[]>(() => [createEmptyEntry()]);
@@ -242,11 +260,15 @@ export function SmartBudgetingView() {
 
   const periodPlannedExpenses = useMemo(
     () =>
-      plannedExpenses.filter(
-        (item) =>
-          item.status !== 'cancelled' &&
-          (viewMode === 'monthly' ? monthKey(item.dueDate) === selectedMonth : yearKey(item.dueDate) === selectedYear)
-      ),
+      plannedExpenses.filter((item) => {
+        if (item.status === 'cancelled') {
+          return false;
+        }
+        const referenceDate = item.dueDate ?? item.createdAt;
+        return viewMode === 'monthly'
+          ? monthKey(referenceDate) === selectedMonth
+          : yearKey(referenceDate) === selectedYear;
+      }),
     [plannedExpenses, viewMode, selectedMonth, selectedYear]
   );
 
@@ -307,21 +329,36 @@ export function SmartBudgetingView() {
     actual: number;
     variance: number;
     status: PlannedExpenseSpendingHealth;
+    remainder: number;
+    priority: PlannedExpenseItem['priority'];
   };
 
   type CategoryNode = Category & { children: CategoryNode[] };
 
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState<{ categoryId: string; plannedAmount: string; actualAmount: string }>({
+  const [editDraft, setEditDraft] = useState<{
+    categoryId: string;
+    plannedAmount: string;
+    actualAmount: string;
+    remainderAmount: string;
+    dueDate: string;
+    hasDueDate: boolean;
+    priority: PlannedExpenseItem['priority'];
+  }>({
     categoryId: '',
     plannedAmount: '',
-    actualAmount: ''
+    actualAmount: '',
+    remainderAmount: '',
+    dueDate: '',
+    hasDueDate: true,
+    priority: 'medium'
   });
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [quickActualDrafts, setQuickActualDrafts] = useState<Record<string, string>>({});
   const [quickActualSavingId, setQuickActualSavingId] = useState<string | null>(null);
   const [navigatorFilter, setNavigatorFilter] = useState<'all' | PlannedExpenseSpendingHealth>('all');
+  const [navigatorView, setNavigatorView] = useState<'category' | 'priority'>('category');
   const [categorySearchTerm, setCategorySearchTerm] = useState('');
   const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
   const [budgetDraft, setBudgetDraft] = useState('');
@@ -330,6 +367,10 @@ export function SmartBudgetingView() {
     { key: 'over', label: 'Overspending' },
     { key: 'under', label: 'Under budget' },
     { key: 'not-spent', label: 'Awaiting spend' }
+  ];
+  const navigatorViewOptions: Array<{ key: 'category' | 'priority'; label: string }> = [
+    { key: 'category', label: 'Category view' },
+    { key: 'priority', label: 'Priority view' }
   ];
   const normalisedSearchTerm = categorySearchTerm.trim().toLowerCase();
 
@@ -355,22 +396,46 @@ export function SmartBudgetingView() {
             Math.abs(Math.abs(txn.amount) - item.plannedAmount) <= Math.max(500, item.plannedAmount * 0.1)
         );
         const matchedAmount = match ? Math.abs(match.amount) : 0;
+        const manualActual =
+          typeof item.actualAmount === 'number' && !Number.isNaN(item.actualAmount) ? item.actualAmount : undefined;
+        const remainderOverride =
+          typeof item.remainderAmount === 'number' && !Number.isNaN(item.remainderAmount)
+            ? Math.max(item.remainderAmount, 0)
+            : null;
         const actualAmount =
-          typeof item.actualAmount === 'number' && !Number.isNaN(item.actualAmount)
-            ? item.actualAmount
-            : matchedAmount;
+          manualActual ??
+          (remainderOverride !== null ? Math.max(item.plannedAmount - remainderOverride, 0) : matchedAmount);
         const variance = item.plannedAmount - actualAmount;
+        const remainder = remainderOverride !== null ? remainderOverride : variance;
         const status: PlannedExpenseSpendingHealth =
           actualAmount === 0 ? 'not-spent' : variance >= 0 ? 'under' : 'over';
         return {
-          item,
+          item: { ...item, priority: item.priority ?? 'medium' },
           match,
           actual: actualAmount,
           variance,
-          status
+          status,
+          remainder,
+          priority: item.priority ?? 'medium'
         } satisfies PlannedExpenseDetail;
       })
-      .sort((a, b) => new Date(a.item.dueDate).getTime() - new Date(b.item.dueDate).getTime());
+      .sort((a, b) => {
+        const hasDueA = Boolean(a.item.dueDate);
+        const hasDueB = Boolean(b.item.dueDate);
+        if (hasDueA && hasDueB) {
+          const diff = new Date(a.item.dueDate!).getTime() - new Date(b.item.dueDate!).getTime();
+          if (diff !== 0) {
+            return diff;
+          }
+        } else if (hasDueA !== hasDueB) {
+          return hasDueA ? -1 : 1;
+        }
+        const createdDiff = new Date(a.item.createdAt).getTime() - new Date(b.item.createdAt).getTime();
+        if (createdDiff !== 0) {
+          return createdDiff;
+        }
+        return a.item.name.localeCompare(b.item.name);
+      });
   }, [periodPlannedExpenses, periodTransactions]);
 
   const expenseCategoryTree = useMemo<CategoryNode[]>(() => {
@@ -421,13 +486,14 @@ export function SmartBudgetingView() {
 
     const summaries = new Map<
       string,
-      { planned: number; actual: number; variance: number; itemCount: number }
+      { planned: number; actual: number; variance: number; itemCount: number; remainder: number }
     >();
 
     expenseCategories.forEach((category) => {
       const ids = expenseDescendantsMap.get(category.id) ?? new Set<string>([category.id]);
       let planned = 0;
       let actual = 0;
+      let remainder = 0;
       let itemCount = 0;
       ids.forEach((id) => {
         const entries = byCategory.get(id);
@@ -436,13 +502,15 @@ export function SmartBudgetingView() {
         entries.forEach((detail) => {
           planned += detail.item.plannedAmount;
           actual += detail.actual;
+          remainder += detail.remainder;
         });
       });
       summaries.set(category.id, {
         planned,
         actual,
         variance: planned - actual,
-        itemCount
+        itemCount,
+        remainder
       });
     });
 
@@ -529,6 +597,46 @@ export function SmartBudgetingView() {
     [uncategorisedDetails, navigatorFilter, normalisedSearchTerm]
   );
 
+  const filteredPriorityDetails = useMemo(() => {
+    return plannedExpenseDetails.filter((detail) => {
+      const matchesFilter = navigatorFilter === 'all' || detail.status === navigatorFilter;
+      if (!matchesFilter) {
+        return false;
+      }
+      if (normalisedSearchTerm === '') {
+        return true;
+      }
+      const categoryName = categoryLookup.get(detail.item.categoryId)?.name?.toLowerCase() ?? 'uncategorised';
+      return (
+        detail.item.name.toLowerCase().includes(normalisedSearchTerm) || categoryName.includes(normalisedSearchTerm)
+      );
+    });
+  }, [plannedExpenseDetails, navigatorFilter, normalisedSearchTerm, categoryLookup]);
+
+  const priorityGroups = useMemo(() => {
+    const groups: Record<PlannedExpenseItem['priority'], PlannedExpenseDetail[]> = {
+      high: [],
+      medium: [],
+      low: []
+    };
+    const timeForDetail = (detail: PlannedExpenseDetail) =>
+      detail.item.dueDate ? new Date(detail.item.dueDate).getTime() : Number.POSITIVE_INFINITY;
+    filteredPriorityDetails.forEach((detail) => {
+      const priority = detail.priority ?? 'medium';
+      groups[priority].push(detail);
+    });
+    PRIORITY_ORDER.forEach((priority) => {
+      groups[priority].sort((a, b) => {
+        const dueComparison = timeForDetail(a) - timeForDetail(b);
+        if (dueComparison !== 0) {
+          return dueComparison;
+        }
+        return a.item.name.localeCompare(b.item.name);
+      });
+    });
+    return groups;
+  }, [filteredPriorityDetails]);
+
   const overallSummary = useMemo(() => {
     const planned = plannedExpenseDetails.reduce((sum, detail) => sum + detail.item.plannedAmount, 0);
     const actual = plannedExpenseDetails.reduce((sum, detail) => sum + detail.actual, 0);
@@ -569,8 +677,10 @@ export function SmartBudgetingView() {
     return overs.slice(0, 3);
   }, [inspectorDetails]);
   const inspectorUpcomingItems = useMemo(() => {
-    const upcoming = inspectorDetails.filter((detail) => detail.status !== 'over');
-    upcoming.sort((a, b) => new Date(a.item.dueDate).getTime() - new Date(b.item.dueDate).getTime());
+    const upcoming = inspectorDetails.filter(
+      (detail) => detail.status !== 'over' && detail.item.dueDate
+    );
+    upcoming.sort((a, b) => new Date(a.item.dueDate!).getTime() - new Date(b.item.dueDate!).getTime());
     return upcoming.slice(0, 3);
   }, [inspectorDetails]);
   const inspectorInProgressItems = useMemo(() => {
@@ -630,7 +740,7 @@ export function SmartBudgetingView() {
     if (entry.amount.trim() === '') return false;
     const numericAmount = Number(entry.amount);
     if (Number.isNaN(numericAmount) || numericAmount < 0) return false;
-    if (!entry.dueDate) return false;
+    if (entry.hasDueDate && !entry.dueDate) return false;
     if (!entry.categoryId) return false;
     return true;
   };
@@ -678,7 +788,8 @@ export function SmartBudgetingView() {
           name: entry.name.trim(),
           plannedAmount: Number(entry.amount),
           categoryId: entry.categoryId,
-          dueDate: entry.dueDate,
+          dueDate: entry.hasDueDate ? entry.dueDate : null,
+          priority: entry.priority,
           status: 'pending'
         });
       }
@@ -759,6 +870,13 @@ export function SmartBudgetingView() {
       typeof detail.item.actualAmount === 'number' && !Number.isNaN(detail.item.actualAmount)
         ? detail.item.actualAmount
         : undefined;
+    const fallbackDate = formatISO(parseISO(detail.item.createdAt), { representation: 'date' });
+    const remainderSource =
+      typeof detail.item.remainderAmount === 'number' && !Number.isNaN(detail.item.remainderAmount)
+        ? detail.item.remainderAmount
+        : detail.remainder > 0
+        ? detail.remainder
+        : undefined;
     setEditDraft({
       categoryId: detail.item.categoryId,
       plannedAmount: String(detail.item.plannedAmount),
@@ -767,13 +885,26 @@ export function SmartBudgetingView() {
           ? String(manualActual)
           : detail.actual > 0
           ? String(detail.actual)
-          : ''
+          : '',
+      remainderAmount:
+        remainderSource !== undefined && remainderSource > 0 ? String(remainderSource) : '',
+      dueDate: detail.item.dueDate ?? fallbackDate,
+      hasDueDate: Boolean(detail.item.dueDate),
+      priority: detail.item.priority ?? 'medium'
     });
   };
 
   const handleCancelEdit = () => {
     setEditingItemId(null);
-    setEditDraft({ categoryId: '', plannedAmount: '', actualAmount: '' });
+    setEditDraft({
+      categoryId: '',
+      plannedAmount: '',
+      actualAmount: '',
+      remainderAmount: '',
+      dueDate: '',
+      hasDueDate: true,
+      priority: 'medium'
+    });
   };
 
   const handleQuickActualChange = (id: string, value: string) => {
@@ -802,21 +933,47 @@ export function SmartBudgetingView() {
     const plannedValue = Number(editDraft.plannedAmount);
     const trimmedActual = editDraft.actualAmount.trim();
     const actualValue = trimmedActual === '' ? undefined : Number(trimmedActual);
+    const trimmedRemainder = editDraft.remainderAmount.trim();
+    const remainderValue = trimmedRemainder === '' ? null : Number(trimmedRemainder);
+    const requiresDueDate = editDraft.hasDueDate && editDraft.dueDate.trim() === '';
     if (!editDraft.categoryId || Number.isNaN(plannedValue) || plannedValue < 0) {
       return;
     }
     if (actualValue !== undefined && (Number.isNaN(actualValue) || actualValue < 0)) {
       return;
     }
+    if (remainderValue !== null && (Number.isNaN(remainderValue) || remainderValue < 0 || remainderValue > plannedValue)) {
+      return;
+    }
+    if (requiresDueDate) {
+      return;
+    }
     setSavingItemId(detail.item.id);
     try {
+      let nextActualValue = actualValue;
+      if (remainderValue !== null) {
+        nextActualValue = Math.max(plannedValue - remainderValue, 0);
+      }
       await updatePlannedExpense(detail.item.id, {
         categoryId: editDraft.categoryId,
         plannedAmount: plannedValue,
-        actualAmount: actualValue
+        actualAmount: nextActualValue,
+        remainderAmount: remainderValue,
+        priority: editDraft.priority,
+        dueDate: editDraft.hasDueDate
+          ? editDraft.dueDate || detail.item.dueDate || formatISO(new Date(), { representation: 'date' })
+          : null
       });
       setEditingItemId(null);
-      setEditDraft({ categoryId: '', plannedAmount: '', actualAmount: '' });
+      setEditDraft({
+        categoryId: '',
+        plannedAmount: '',
+        actualAmount: '',
+        remainderAmount: '',
+        dueDate: '',
+        hasDueDate: true,
+        priority: 'medium'
+      });
     } finally {
       setSavingItemId(null);
     }
@@ -825,6 +982,7 @@ export function SmartBudgetingView() {
   const handleFocusDetail = (detail: PlannedExpenseDetail) => {
     setNavigatorFilter('all');
     setCategorySearchTerm('');
+    setNavigatorView('category');
     focusCategory(detail.item.categoryId, true);
     handleStartEdit(detail);
   };
@@ -836,10 +994,12 @@ export function SmartBudgetingView() {
       categoryLookup.get(detail.item.categoryId)?.name ??
       categories.find((cat) => cat.id === detail.item.categoryId)?.name ??
       'Uncategorised';
-    const dueDateLabel = new Date(detail.item.dueDate).toLocaleDateString('en-IN', {
-      month: 'short',
-      day: 'numeric'
-    });
+    const dueDateLabel = detail.item.dueDate
+      ? new Date(detail.item.dueDate).toLocaleDateString('en-IN', {
+          month: 'short',
+          day: 'numeric'
+        })
+      : 'No due date';
     const progressPercentRaw =
       detail.item.plannedAmount <= 0
         ? detail.actual > 0
@@ -851,6 +1011,7 @@ export function SmartBudgetingView() {
     const progressColor = progressColorByStatus[detail.status];
     const varianceLabel = detail.variance >= 0 ? 'Saved' : 'Overspent';
     const statusToken = spendingBadgeStyles[detail.status];
+    const priorityToken = PRIORITY_TOKEN_STYLES[detail.priority ?? 'medium'];
     const actualToneClass = statusToken.toneClass;
     const actualBackgroundClass =
       detail.status === 'over'
@@ -858,18 +1019,38 @@ export function SmartBudgetingView() {
         : detail.status === 'under'
         ? 'bg-success/10'
         : 'bg-slate-950/80';
+    const remainderValue = detail.remainder;
+    const remainderLabel = remainderValue >= 0 ? 'Remaining' : 'Overspent';
+    const remainderDisplay = Math.abs(remainderValue);
+    const remainderToneClass = remainderValue >= 0 ? 'text-success' : 'text-danger';
+    const remainderBackgroundClass = remainderValue >= 0 ? 'bg-success/10' : 'bg-danger/10';
     const isCurrentCategoryMissing =
       isEditing && editDraft.categoryId && !categoryOptions.some((option) => option.id === editDraft.categoryId);
     const parsedPlanned = Number(editDraft.plannedAmount);
     const parsedActual = editDraft.actualAmount.trim() === '' ? undefined : Number(editDraft.actualAmount);
+    const parsedRemainder = editDraft.remainderAmount.trim() === '' ? null : Number(editDraft.remainderAmount);
+    const isRemainderProvided = editDraft.remainderAmount.trim() !== '';
     const hasPlannedError = isEditing && (Number.isNaN(parsedPlanned) || parsedPlanned < 0);
-    const hasActualError = isEditing && parsedActual !== undefined && (Number.isNaN(parsedActual) || parsedActual < 0);
+    const hasActualError =
+      isEditing &&
+      !isRemainderProvided &&
+      parsedActual !== undefined &&
+      (Number.isNaN(parsedActual) || parsedActual < 0);
+    const hasRemainderError =
+      isEditing &&
+      parsedRemainder !== null &&
+      (Number.isNaN(parsedRemainder) ||
+        parsedRemainder < 0 ||
+        (Number.isFinite(parsedPlanned) && parsedPlanned >= 0 && parsedRemainder > parsedPlanned));
+    const requiresDueDate = isEditing && editDraft.hasDueDate && editDraft.dueDate.trim() === '';
     const isSaveDisabled =
       !isEditing ||
       !editDraft.categoryId ||
       editDraft.plannedAmount.trim() === '' ||
       hasPlannedError ||
       hasActualError ||
+      hasRemainderError ||
+      requiresDueDate ||
       isSaving;
     const quickActualDraft = quickActualDrafts[detail.item.id] ?? '';
     const quickActualTrimmed = quickActualDraft.trim();
@@ -927,6 +1108,7 @@ export function SmartBudgetingView() {
                   className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950/80 px-3 py-1.5 text-xs text-slate-100 focus:border-accent focus:outline-none"
                   value={editDraft.categoryId}
                   onChange={(event) => setEditDraft((prev) => ({ ...prev, categoryId: event.target.value }))}
+                  disabled={isSaving}
                 >
                   {isCurrentCategoryMissing && (
                     <option value={detail.item.categoryId}>
@@ -939,6 +1121,11 @@ export function SmartBudgetingView() {
                     </option>
                   ))}
                 </select>
+                {isCurrentCategoryMissing && (
+                  <p className="mt-1 text-[10px] text-warning">
+                    The original category is no longer available. Pick another one before saving.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -953,6 +1140,7 @@ export function SmartBudgetingView() {
                   }`}
                   value={editDraft.plannedAmount}
                   onChange={(event) => setEditDraft((prev) => ({ ...prev, plannedAmount: event.target.value }))}
+                  disabled={isSaving}
                 />
                 {hasPlannedError && <p className="text-[10px] text-danger">Enter a valid planned amount.</p>}
               </div>
@@ -975,6 +1163,7 @@ export function SmartBudgetingView() {
                   }`}
                   value={editDraft.actualAmount}
                   onChange={(event) => setEditDraft((prev) => ({ ...prev, actualAmount: event.target.value }))}
+                  disabled={isRemainderProvided || isSaving}
                 />
                 {hasActualError && <p className="text-[10px] text-danger">Enter a valid spent amount.</p>}
               </div>
@@ -1085,31 +1274,34 @@ export function SmartBudgetingView() {
       planned: 0,
       actual: 0,
       variance: 0,
-      itemCount: 0
+      itemCount: 0,
+      remainder: 0
     };
     const directItems = itemsByCategory.get(category.id) ?? [];
     const categoryStatus: PlannedExpenseSpendingHealth =
       summary.actual === 0 ? 'not-spent' : summary.variance >= 0 ? 'under' : 'over';
     const statusToken = spendingBadgeStyles[categoryStatus];
     const descendantIds = expenseDescendantsMap.get(category.id) ?? new Set<string>([category.id]);
-    const remainderClass = summary.variance >= 0 ? 'text-success' : 'text-danger';
-    const remainderLabel = summary.variance >= 0 ? 'Remaining' : 'Overspent';
-    const remainderDescriptor = summary.actual === 0 ? 'Awaiting spend' : remainderLabel;
+    const remainderValue = summary.remainder;
+    const remainderClass = remainderValue >= 0 ? 'text-success' : 'text-danger';
+    const remainderLabel = remainderValue >= 0 ? 'Remaining' : 'Overspent';
+    const remainderDescriptor = summary.actual === 0 && remainderValue >= 0 ? 'Awaiting spend' : remainderLabel;
     const nextDueDetail = plannedExpenseDetails.reduce<PlannedExpenseDetail | null>((closest, detail) => {
-      if (!descendantIds.has(detail.item.categoryId)) {
+      if (!descendantIds.has(detail.item.categoryId) || !detail.item.dueDate) {
         return closest;
       }
-      if (!closest) return detail;
+      if (!closest || !closest.item.dueDate) return detail;
       const currentTime = new Date(detail.item.dueDate).getTime();
       const closestTime = new Date(closest.item.dueDate).getTime();
       return currentTime < closestTime ? detail : closest;
     }, null);
-    const nextDueLabel = nextDueDetail
-      ? new Date(nextDueDetail.item.dueDate).toLocaleDateString('en-IN', {
-          month: 'short',
-          day: 'numeric'
-        })
-      : null;
+    const nextDueLabel =
+      nextDueDetail && nextDueDetail.item.dueDate
+        ? new Date(nextDueDetail.item.dueDate).toLocaleDateString('en-IN', {
+            month: 'short',
+            day: 'numeric'
+          })
+        : null;
     const matchesCategorySearch =
       normalisedSearchTerm !== '' && category.name.toLowerCase().includes(normalisedSearchTerm);
     const visibleDirectItems = directItems.filter((detail) => {
@@ -1250,6 +1442,7 @@ export function SmartBudgetingView() {
                       <th className="px-3 py-2 font-semibold">Name</th>
                       <th className="px-3 py-2 font-semibold">Amount (₹)</th>
                       <th className="px-3 py-2 font-semibold">Due date</th>
+                      <th className="px-3 py-2 font-semibold">Priority</th>
                       <th className="px-3 py-2 font-semibold">Category</th>
                       <th className="px-3 py-2 font-semibold">Actions</th>
                     </tr>
@@ -1278,12 +1471,50 @@ export function SmartBudgetingView() {
                             />
                           </td>
                           <td className="px-3 py-2">
-                            <input
-                              type="date"
+                            <div className="flex flex-col gap-2">
+                              <input
+                                type="date"
+                                className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm disabled:opacity-60"
+                                value={entry.dueDate}
+                                onChange={(event) =>
+                                  handleEntryChange(entry.id, { dueDate: event.target.value })
+                                }
+                                disabled={!entry.hasDueDate}
+                              />
+                              <label className="flex items-center gap-2 text-xs text-slate-400">
+                                <input
+                                  type="checkbox"
+                                  checked={!entry.hasDueDate}
+                                  onChange={(event) => {
+                                    const noDueDate = event.target.checked;
+                                    handleEntryChange(entry.id, {
+                                      hasDueDate: !noDueDate,
+                                      ...(noDueDate
+                                        ? {}
+                                        : { dueDate: entry.dueDate || resolveDefaultDueDate() })
+                                    });
+                                  }}
+                                />
+                                <span>No due date</span>
+                              </label>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
                               className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-                              value={entry.dueDate}
-                              onChange={(event) => handleEntryChange(entry.id, { dueDate: event.target.value })}
-                            />
+                              value={entry.priority}
+                              onChange={(event) =>
+                                handleEntryChange(entry.id, {
+                                  priority: event.target.value as PlannedExpenseItem['priority']
+                                })
+                              }
+                            >
+                              {PRIORITY_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex flex-col gap-2">
@@ -1618,6 +1849,25 @@ export function SmartBudgetingView() {
 
         <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            {navigatorViewOptions.map(({ key, label }) => {
+              const isActive = navigatorView === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setNavigatorView(key)}
+                  className={`rounded-full border px-3 py-1 font-semibold transition ${
+                    isActive
+                      ? 'border-accent bg-accent text-slate-900'
+                      : 'border-slate-700 text-slate-300 hover:border-accent hover:text-accent'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             {navigatorFilterOptions.map(({ key, label }) => {
               const isActive = navigatorFilter === key;
               return (
@@ -1655,20 +1905,24 @@ export function SmartBudgetingView() {
                 </button>
               )}
             </div>
-            <button
-              type="button"
-              onClick={expandAllCategories}
-              className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
-            >
-              Expand all
-            </button>
-            <button
-              type="button"
-              onClick={collapseAllCategories}
-              className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
-            >
-              Collapse all
-            </button>
+            {navigatorView === 'category' && (
+              <>
+                <button
+                  type="button"
+                  onClick={expandAllCategories}
+                  className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
+                >
+                  Expand all
+                </button>
+                <button
+                  type="button"
+                  onClick={collapseAllCategories}
+                  className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
+                >
+                  Collapse all
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -1718,14 +1972,58 @@ export function SmartBudgetingView() {
                       Assign a category so these expenses roll into the right budgets.
                     </p>
                   </div>
-                  <span className="rounded-full bg-warning/20 px-2 py-0.5 text-[10px] font-semibold text-warning">
-                    {visibleUncategorisedDetails.length} item{visibleUncategorisedDetails.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-                <div className="mt-3 space-y-3">
-                  {visibleUncategorisedDetails.map((detail) => renderItemCard(detail, 0))}
-                </div>
-              </div>
+                )}
+                {visibleUncategorisedDetails.length > 0 && (
+                  <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-slate-100">Uncategorised items</h4>
+                        <p className="text-[11px] text-slate-500">
+                          Assign a category so these expenses roll into the right budgets.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-warning/20 px-2 py-0.5 text-[10px] font-semibold text-warning">
+                        {visibleUncategorisedDetails.length} item{visibleUncategorisedDetails.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-3">
+                      {visibleUncategorisedDetails.map((detail) => renderItemCard(detail, 0))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {PRIORITY_ORDER.map((priority) => {
+                  const items = priorityGroups[priority];
+                  if (items.length === 0) {
+                    return null;
+                  }
+                  const token = PRIORITY_TOKEN_STYLES[priority];
+                  return (
+                    <section
+                      key={priority}
+                      className="rounded-xl border border-slate-800 bg-slate-950/70 p-4"
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${token.badgeClass}`}
+                          >
+                            {token.label}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            {items.length} item{items.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="mt-3 space-y-3">
+                        {items.map((detail) => renderItemCard(detail, 0))}
+                      </div>
+                    </section>
+                  );
+                })}
+              </>
             )}
             {!hasNavigatorResults && (
               <p className="text-sm text-slate-500">
@@ -1780,10 +2078,12 @@ export function SmartBudgetingView() {
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-semibold text-slate-100">{detail.item.name}</span>
                             <span>
-                              {new Date(detail.item.dueDate).toLocaleDateString('en-IN', {
-                                month: 'short',
-                                day: 'numeric'
-                              })}
+                              {detail.item.dueDate
+                                ? new Date(detail.item.dueDate).toLocaleDateString('en-IN', {
+                                    month: 'short',
+                                    day: 'numeric'
+                                  })
+                                : 'No due date'}
                             </span>
                           </div>
                           <div className="mt-1 flex items-center justify-between gap-2">

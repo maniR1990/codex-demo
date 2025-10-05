@@ -44,12 +44,12 @@ function createBlankDraft(type: Category['type'] = 'income'): CategoryDraftForm 
   };
 }
 
-function monthKey(date: string) {
-  return date.slice(0, 7);
+function monthKey(date?: string | null) {
+  return date ? date.slice(0, 7) : '';
 }
 
-function yearKey(date: string) {
-  return date.slice(0, 4);
+function yearKey(date?: string | null) {
+  return date ? date.slice(0, 4) : '';
 }
 
 function buildCategoryTree(categories: Category[]): CategoryNode[] {
@@ -179,14 +179,14 @@ export function IncomeManagementView() {
   const categoryMonthOptions = useMemo(() => {
     const months = new Set<string>([selectedCategoryMonth, defaultMonth]);
     transactions.forEach((txn) => months.add(monthKey(txn.date)));
-    plannedExpenses.forEach((item) => months.add(monthKey(item.dueDate)));
+    plannedExpenses.forEach((item) => months.add(monthKey(item.dueDate ?? item.createdAt)));
     return Array.from(months).sort((a, b) => (a > b ? -1 : 1));
   }, [transactions, plannedExpenses, selectedCategoryMonth, defaultMonth]);
 
   const categoryYearOptions = useMemo(() => {
     const years = new Set<string>([selectedCategoryYear, defaultYear]);
     transactions.forEach((txn) => years.add(yearKey(txn.date)));
-    plannedExpenses.forEach((item) => years.add(yearKey(item.dueDate)));
+    plannedExpenses.forEach((item) => years.add(yearKey(item.dueDate ?? item.createdAt)));
     return Array.from(years).sort((a, b) => (a > b ? -1 : 1));
   }, [transactions, plannedExpenses, selectedCategoryYear, defaultYear]);
 
@@ -258,8 +258,8 @@ export function IncomeManagementView() {
     () =>
       plannedExpenses.filter((item) =>
         categoryViewMode === 'monthly'
-          ? monthKey(item.dueDate) === selectedCategoryMonth
-          : yearKey(item.dueDate) === selectedCategoryYear
+          ? monthKey(item.dueDate ?? item.createdAt) === selectedCategoryMonth
+          : yearKey(item.dueDate ?? item.createdAt) === selectedCategoryYear
       ),
     [plannedExpenses, categoryViewMode, selectedCategoryMonth, selectedCategoryYear]
   );
@@ -322,7 +322,19 @@ export function IncomeManagementView() {
         }
 
         transactionsList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        plannedList.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+        plannedList.sort((a, b) => {
+          const hasDueA = Boolean(a.dueDate);
+          const hasDueB = Boolean(b.dueDate);
+          if (hasDueA && hasDueB) {
+            const diff = new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime();
+            if (diff !== 0) {
+              return diff;
+            }
+          } else if (hasDueA !== hasDueB) {
+            return hasDueA ? -1 : 1;
+          }
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        });
 
         return {
           totalSpent,
@@ -767,7 +779,10 @@ export function IncomeManagementView() {
                         <li key={item.id} className="flex justify-between rounded-lg bg-slate-900/80 px-3 py-2">
                           <span>{item.description}</span>
                           <span className="font-semibold text-warning">
-                            {formatCurrency(item.plannedAmount)} on {format(parseISO(item.dueDate), 'dd MMM yyyy')}
+                            {formatCurrency(item.plannedAmount)}{' '}
+                            {item.dueDate
+                              ? `on ${format(parseISO(item.dueDate), 'dd MMM yyyy')}`
+                              : '— no due date'}
                           </span>
                         </li>
                       ))}

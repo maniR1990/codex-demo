@@ -84,10 +84,13 @@ export function generateInsights(input: InsightInput): Insight[] {
   }
 
   const nextRecurring = input.recurringExpenses
-    .map((expense) => ({
-      ...expense,
-      dueIn: differenceInMonths(parseISO(expense.nextDueDate ?? expense.dueDate), new Date())
-    }))
+    .map((expense) => {
+      const referenceDate = expense.nextDueDate ?? expense.dueDate ?? expense.createdAt;
+      return {
+        ...expense,
+        dueIn: differenceInMonths(parseISO(referenceDate), new Date())
+      };
+    })
     .sort((a, b) => a.dueIn - b.dueIn)[0];
 
   if (nextRecurring) {
