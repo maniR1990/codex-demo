@@ -74,11 +74,13 @@ const PROGRESS_COLOR_BY_STATUS: Record<PlannedExpenseSpendingHealth, string> = {
 
 export type SmartBudgetingColumnKey =
   | 'category'
-  | 'earliestDue'
+  | 'item'
   | 'planned'
   | 'actual'
   | 'variance'
-  | 'actions';
+  | 'due'
+  | 'status'
+  | 'priority';
 
 type ColumnPreferences = {
   order: SmartBudgetingColumnKey[];
@@ -87,22 +89,26 @@ type ColumnPreferences = {
 };
 
 const DEFAULT_COLUMN_PREFERENCES: ColumnPreferences = {
-  order: ['category', 'earliestDue', 'planned', 'actual', 'variance', 'actions'],
+  order: ['category', 'item', 'planned', 'actual', 'variance', 'due', 'status', 'priority'],
   visible: {
     category: true,
-    earliestDue: true,
+    item: true,
     planned: true,
     actual: true,
     variance: true,
-    actions: true
+    due: true,
+    status: true,
+    priority: true
   },
   widths: {
-    category: 'minmax(0,2.6fr)',
-    earliestDue: 'minmax(110px,0.9fr)',
-    planned: 'minmax(120px,0.9fr)',
-    actual: 'minmax(120px,0.9fr)',
-    variance: 'minmax(120px,0.9fr)',
-    actions: 'minmax(220px,1fr)'
+    category: 'minmax(180px,1.4fr)',
+    item: 'minmax(220px,2fr)',
+    planned: 'minmax(120px,1fr)',
+    actual: 'minmax(150px,1.1fr)',
+    variance: 'minmax(130px,1fr)',
+    due: 'minmax(130px,0.9fr)',
+    status: 'minmax(160px,1.1fr)',
+    priority: 'minmax(120px,0.8fr)'
   }
 } as const satisfies ColumnPreferences;
 
@@ -1255,6 +1261,42 @@ export function useSmartBudgetingController() {
       viewMode === 'monthly'
         ? { mode: 'monthly' as const, month: selectedMonth }
         : { mode: 'yearly' as const, year: selectedYear };
+    const smartBudgetingRowMetadata = Object.fromEntries(
+      plannedExpenseDetails.map((detail) => {
+        const category = categoryLookup.get(detail.item.categoryId);
+        return [
+          detail.item.id,
+          {
+            plannedExpenseId: detail.item.id,
+            categoryId: detail.item.categoryId,
+            categoryLabel: category?.name ?? 'Uncategorised',
+            dueDate: detail.item.dueDate,
+            status: detail.status,
+            priority: detail.priority,
+            plannedAmount: detail.item.plannedAmount,
+            actualAmount: detail.actual,
+            variance: detail.variance,
+            remainderAmount: detail.remainder,
+            matchedTransactionId: detail.match?.id ?? null
+          }
+        ];
+      })
+    ) satisfies Record<
+      string,
+      {
+        plannedExpenseId: string;
+        categoryId: string;
+        categoryLabel: string;
+        dueDate: string | null;
+        status: PlannedExpenseSpendingHealth;
+        priority: PlannedExpenseItem['priority'];
+        plannedAmount: number;
+        actualAmount: number;
+        variance: number;
+        remainderAmount: number;
+        matchedTransactionId: string | null;
+      }
+    >;
     return {
       entities: {
         categories: categoryEntities,
@@ -1277,8 +1319,9 @@ export function useSmartBudgetingController() {
       views: {
         smartBudgetingTable: {
           period: tablePeriod,
-          rows: categoriesWithContent.map((category) => category.id),
+          rows: plannedExpenseDetails.map((detail) => detail.item.id),
           visibleDetailIds: plannedExpenseDetails.map((detail) => detail.item.id),
+          rowMetadata: smartBudgetingRowMetadata,
           columnOrder: [...columnPreferences.order]
         }
       },
@@ -1320,7 +1363,6 @@ export function useSmartBudgetingController() {
     allBudgetedPlannedExpenses,
     budgetMonthMap,
     categories,
-    categoriesWithContent,
     categoryCreationTargetId,
     categorySearchTerm,
     categorySummaries,
@@ -1337,6 +1379,7 @@ export function useSmartBudgetingController() {
     navigatorView,
     plannedEntries,
     plannedExpenseDetails,
+    categoryLookup,
     quickActualDrafts,
     selectedCategoryId,
     selectedMonth,

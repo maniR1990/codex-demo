@@ -110,12 +110,14 @@ export function NavigatorFilters({ categories, table, onOpenDialog }: NavigatorF
   } = categories;
   const columnMenuId = useId();
   const columnLabels: Record<SmartBudgetingController['table']['columnPreferences']['order'][number], string> = {
-    category: 'Category / Planned items',
-    earliestDue: 'Earliest due date',
+    category: 'Category',
+    item: 'Item',
     planned: 'Planned amount',
     actual: 'Actual amount',
     variance: 'Variance / remaining',
-    actions: 'Actions'
+    due: 'Due date',
+    status: 'Status',
+    priority: 'Priority'
   } as const;
 
   return (

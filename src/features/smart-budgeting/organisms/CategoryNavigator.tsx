@@ -24,13 +24,25 @@ export function CategoryNavigator({ categories, editing, table, utils }: Categor
   const { visibleColumns, gridTemplateColumns } = table;
 
   const columnLabels: Record<SmartBudgetingColumnKey, string> = {
-    category: 'Category / Planned items',
-    earliestDue: 'Earliest due',
+    category: 'Category',
+    item: 'Item',
     planned: 'Planned',
     actual: 'Actual',
     variance: 'Variance',
-    actions: 'Actions'
+    due: 'Due',
+    status: 'Status',
+    priority: 'Priority'
   } as const;
+  const headerAlignment: Record<SmartBudgetingColumnKey, string> = {
+    category: 'text-left',
+    item: 'text-left',
+    planned: 'text-right',
+    actual: 'text-right',
+    variance: 'text-right',
+    due: 'text-left',
+    status: 'text-left',
+    priority: 'text-left'
+  };
 
   const itemRefs = useRef(new Map<string, HTMLDivElement>());
 
