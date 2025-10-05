@@ -1271,6 +1271,42 @@ export function useSmartBudgetingController() {
       viewMode === 'monthly'
         ? { mode: 'monthly' as const, month: selectedMonth }
         : { mode: 'yearly' as const, year: selectedYear };
+    const smartBudgetingRowMetadata = Object.fromEntries(
+      plannedExpenseDetails.map((detail) => {
+        const category = categoryLookup.get(detail.item.categoryId);
+        return [
+          detail.item.id,
+          {
+            plannedExpenseId: detail.item.id,
+            categoryId: detail.item.categoryId,
+            categoryLabel: category?.name ?? 'Uncategorised',
+            dueDate: detail.item.dueDate,
+            status: detail.status,
+            priority: detail.priority,
+            plannedAmount: detail.item.plannedAmount,
+            actualAmount: detail.actual,
+            variance: detail.variance,
+            remainderAmount: detail.remainder,
+            matchedTransactionId: detail.match?.id ?? null
+          }
+        ];
+      })
+    ) satisfies Record<
+      string,
+      {
+        plannedExpenseId: string;
+        categoryId: string;
+        categoryLabel: string;
+        dueDate: string | null;
+        status: PlannedExpenseSpendingHealth;
+        priority: PlannedExpenseItem['priority'];
+        plannedAmount: number;
+        actualAmount: number;
+        variance: number;
+        remainderAmount: number;
+        matchedTransactionId: string | null;
+      }
+    >;
     return {
       entities: {
         categories: categoryEntities,
@@ -1293,8 +1329,9 @@ export function useSmartBudgetingController() {
       views: {
         smartBudgetingTable: {
           period: tablePeriod,
-          rows: categoriesWithContent.map((category) => category.id),
+          rows: plannedExpenseDetails.map((detail) => detail.item.id),
           visibleDetailIds: plannedExpenseDetails.map((detail) => detail.item.id),
+          rowMetadata: smartBudgetingRowMetadata,
           columnOrder: [...columnPreferences.order]
         }
       },
@@ -1336,7 +1373,6 @@ export function useSmartBudgetingController() {
     allBudgetedPlannedExpenses,
     budgetMonthMap,
     categories,
-    categoriesWithContent,
     categoryCreationTargetId,
     categorySearchTerm,
     categorySummaries,
@@ -1353,6 +1389,7 @@ export function useSmartBudgetingController() {
     navigatorView,
     plannedEntries,
     plannedExpenseDetails,
+    categoryLookup,
     quickActualDrafts,
     selectedCategoryId,
     selectedMonth,
