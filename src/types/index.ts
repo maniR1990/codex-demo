@@ -159,6 +159,7 @@ export interface FinancialSnapshot {
   transactions: Transaction[];
   monthlyIncomes: MonthlyIncome[];
   plannedExpenses: PlannedExpenseItem[];
+  budgetMonths: Record<string, BudgetMonth>;
   recurringExpenses: RecurringExpense[];
   goals: Goal[];
   insights: Insight[];
@@ -168,3 +169,93 @@ export interface FinancialSnapshot {
   revision: number;
   lastLocalChangeAt: string;
 }
+
+export interface BudgetMonthTotals {
+  planned: number;
+  actual: number;
+  difference: number;
+  rolloverFromPrevious: number;
+  rolloverToNext: number;
+}
+
+export interface BudgetOriginalCurrency {
+  amount: number;
+  currency: Currency;
+  exchangeRate?: number;
+}
+
+export interface BudgetPlannedItem {
+  id: string;
+  categoryId: string;
+  name: string;
+  plannedAmount: number;
+  rolloverAmount?: number;
+  currency: Currency;
+  originalCurrency?: BudgetOriginalCurrency;
+  notes?: string;
+}
+
+export interface BudgetActual {
+  id: string;
+  transactionId?: string;
+  categoryId?: string;
+  description?: string;
+  amount: number;
+  currency: Currency;
+  originalCurrency?: BudgetOriginalCurrency;
+  occurredOn?: string;
+}
+
+export interface BudgetRecurringAllocation {
+  id: string;
+  recurringExpenseId?: string;
+  categoryId?: string;
+  amount: number;
+  currency: Currency;
+  originalCurrency?: BudgetOriginalCurrency;
+  startMonth?: string;
+  endMonth?: string | null;
+}
+
+export interface BudgetAdjustment {
+  id: string;
+  categoryId?: string;
+  amount: number;
+  currency: Currency;
+  originalCurrency?: BudgetOriginalCurrency;
+  reason?: string;
+  appliedOn?: string;
+  rolloverSourceMonth?: string;
+  rolloverTargetMonth?: string;
+}
+
+export interface BudgetMonth {
+  month: string;
+  currency: Currency;
+  totals: BudgetMonthTotals;
+  plannedItems: BudgetPlannedItem[];
+  actuals: BudgetActual[];
+  unassignedActuals: BudgetActual[];
+  recurringAllocations: BudgetRecurringAllocation[];
+  adjustments: BudgetAdjustment[];
+}
+
+export const createDefaultBudgetMonth = (
+  month: string,
+  currency: Currency
+): BudgetMonth => ({
+  month,
+  currency,
+  totals: {
+    planned: 0,
+    actual: 0,
+    difference: 0,
+    rolloverFromPrevious: 0,
+    rolloverToNext: 0
+  },
+  plannedItems: [],
+  actuals: [],
+  unassignedActuals: [],
+  recurringAllocations: [],
+  adjustments: []
+});
