@@ -67,9 +67,9 @@ export default function App() {
       <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 md:flex-row">
         <nav
           id="primary-navigation"
-          className={`flex flex-col gap-2 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow transition-all md:max-w-xs md:border-0 md:bg-transparent md:p-0 md:shadow-none ${
-            isNavOpen ? 'max-h-[32rem] opacity-100' : 'max-h-0 opacity-0 md:max-h-full md:opacity-100'
-          } md:flex`}
+          className={`flex flex-col gap-2 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow transition-[max-height,opacity] md:w-64 md:flex-shrink-0 md:border-0 md:bg-transparent md:p-0 md:shadow-none ${
+            isNavOpen ? 'max-h-[32rem] opacity-100' : 'max-h-0 opacity-0'
+          } md:flex md:max-h-none md:opacity-100 md:overflow-visible`}
         >
           <NavLink to="/" end className={navLinkClass}>
             CEO Dashboard
