@@ -1,5 +1,4 @@
-import { Fragment } from 'react';
-import type { JSX } from 'react';
+import { useEffect, useRef } from 'react';
 import { PlannedExpenseItemCard } from '../molecules/PlannedExpenseItemCard';
 import type {
   PlannedExpenseDetail,
@@ -32,6 +31,7 @@ export function CategoryNavigator({ categories, editing, table, utils }: Categor
     hasNavigatorResults
   } = categories;
   const { visibleColumns, gridTemplateColumns } = table;
+
   const columnLabels: Record<SmartBudgetingColumnKey, string> = {
     category: 'Category',
     item: 'Item',
@@ -74,6 +74,7 @@ export function CategoryNavigator({ categories, editing, table, utils }: Categor
                     editing={editing}
                     table={table}
                     utils={utils}
+                    isFocused={focusedDetailId === detail.item.id}
                   />
                 ))}
               </div>

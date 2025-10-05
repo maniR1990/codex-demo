@@ -32,8 +32,6 @@ export function SmartBudgetingView() {
         categories={categories}
         table={table}
         onOpenDialog={dialog.open}
-        onExpandAll={categories.expandAllCategories}
-        onCollapseAll={categories.collapseAllCategories}
       />
 
       <CategoryNavigator categories={categories} editing={editing} table={table} utils={utils} />
