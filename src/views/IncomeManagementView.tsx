@@ -624,18 +624,72 @@ export function IncomeManagementView() {
               </form>
             ) : (
               <div className="space-y-4 text-xs">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <p className="text-slate-400">Parent category</p>
-                    <p className="font-semibold text-slate-200">{parentLabel}</p>
+                <div className="flex flex-wrap items-stretch gap-3 text-xs">
+                  <div className="flex min-w-[150px] flex-1 items-center gap-2 rounded-lg border border-slate-800/60 bg-slate-950/60 px-3 py-2">
+                    <span className="text-slate-400" aria-hidden="true">
+                      <svg
+                        className="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M4 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
+                        <path d="M9 12h6" />
+                      </svg>
+                    </span>
+                    <div className="min-w-0">
+                      <p className="sr-only">Parent category</p>
+                      <p className="truncate font-semibold text-slate-200">{parentLabel}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-slate-400">Category type</p>
-                    <p className="font-semibold uppercase tracking-wide text-slate-200">{node.category.type}</p>
+                  <div className="flex min-w-[140px] flex-1 items-center gap-2 rounded-lg border border-slate-800/60 bg-slate-950/60 px-3 py-2">
+                    <span className="text-slate-400" aria-hidden="true">
+                      <svg
+                        className="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M4 7h16M4 12h16M4 17h10" />
+                      </svg>
+                    </span>
+                    <div className="min-w-0">
+                      <p className="sr-only">Category type</p>
+                      <p className="truncate font-semibold uppercase tracking-wide text-slate-200">
+                        {node.category.type}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-slate-400">Direct children</p>
-                    <p className="font-semibold text-slate-200">{node.children.length}</p>
+                  <div className="flex min-w-[120px] flex-1 items-center gap-2 rounded-lg border border-slate-800/60 bg-slate-950/60 px-3 py-2">
+                    <span className="text-slate-400" aria-hidden="true">
+                      <svg
+                        className="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M5 7a4 4 0 1 1 8 0v3a4 4 0 1 1-8 0Z" />
+                        <path d="M13 13.5a4 4 0 1 1 6 3.464" />
+                        <path d="M5 21v-2a4 4 0 0 1 4-4h2" />
+                        <path d="M17 21v-2" />
+                      </svg>
+                    </span>
+                    <div className="min-w-0">
+                      <p className="sr-only">Direct children</p>
+                      <p className="truncate font-semibold text-slate-200">{node.children.length}</p>
+                    </div>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 text-[11px] text-slate-400">
