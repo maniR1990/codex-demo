@@ -214,6 +214,43 @@ const toBudgetPlannedItem = (
   notes: item.notes
 });
 
+const DEFAULT_CURRENCY: Currency = 'INR';
+
+const resolveMonthCurrency = (
+  snapshot: FinancialSnapshot,
+  month: BudgetMonth | undefined
+): Currency =>
+  ((month as unknown as { currency?: Currency })?.currency) ??
+  snapshot.profile?.currency ??
+  DEFAULT_CURRENCY;
+
+const syncPlannedEntriesForMonth = (
+  snapshot: FinancialSnapshot,
+  monthKey: string,
+  plannedExpenses: PlannedExpenseItem[]
+): FinancialSnapshot => {
+  const month = snapshot.budgetMonths[monthKey];
+  if (!month) {
+    return snapshot;
+  }
+  const currency = resolveMonthCurrency(snapshot, month);
+  const plannedItems = plannedExpenses.map((expense) =>
+    toBudgetPlannedItem(expense, currency)
+  );
+  return {
+    ...snapshot,
+    budgetMonths: {
+      ...snapshot.budgetMonths,
+      [monthKey]: {
+        ...month,
+        currency,
+        plannedExpenses,
+        plannedItems
+      }
+    }
+  };
+};
+
 const toBudgetActualFromPlanned = (
   item: PlannedExpenseItem,
   currency: Currency
@@ -1021,17 +1058,15 @@ function useFinancialActions(container: FinancialStoreContainer): FinancialStore
         const key = budgetMonthKey(item.dueDate ?? item.createdAt);
         let next = ensureBudgetMonth(snapshot, key);
         const month = next.budgetMonths[key];
-        next = {
-          ...next,
-          budgetMonths: {
-            ...next.budgetMonths,
-            [key]: {
-              ...month,
-              plannedExpenses: [...month.plannedExpenses, item]
-            }
+        const plannedExpenses = [...month.plannedExpenses, item];
+        next = syncPlannedEntriesForMonth(
+          {
+            ...next,
+            plannedExpenses: []
           },
-          plannedExpenses: []
-        };
+          key,
+          plannedExpenses
+        );
         return recomputeBudgetMonth(next, key);
       });
       return item;
@@ -1059,30 +1094,15 @@ function useFinancialActions(container: FinancialStoreContainer): FinancialStore
         const withoutCurrent = next.budgetMonths[monthKey].plannedExpenses.filter((expense) => expense.id !== id);
         next = {
           ...next,
-          budgetMonths: {
-            ...next.budgetMonths,
-            [monthKey]: {
-              ...next.budgetMonths[monthKey],
-              plannedExpenses: withoutCurrent
-            }
-          },
           plannedExpenses: []
         };
+        next = syncPlannedEntriesForMonth(next, monthKey, withoutCurrent);
         const destinationMonth = next.budgetMonths[nextMonthKey];
         const existingIndex = destinationMonth.plannedExpenses.findIndex((expense) => expense.id === id);
         const updatedPlanned = existingIndex >= 0
           ? destinationMonth.plannedExpenses.map((expense) => (expense.id === id ? updatedExpense : expense))
           : [...destinationMonth.plannedExpenses, updatedExpense];
-        next = {
-          ...next,
-          budgetMonths: {
-            ...next.budgetMonths,
-            [nextMonthKey]: {
-              ...destinationMonth,
-              plannedExpenses: updatedPlanned
-            }
-          }
-        };
+        next = syncPlannedEntriesForMonth(next, nextMonthKey, updatedPlanned);
         for (const key of touched) {
           next = recomputeBudgetMonth(next, key);
         }
@@ -1099,15 +1119,9 @@ function useFinancialActions(container: FinancialStoreContainer): FinancialStore
         const plannedExpenses = month.plannedExpenses.filter((expense) => expense.id !== id);
         let next: FinancialSnapshot = {
           ...snapshot,
-          budgetMonths: {
-            ...snapshot.budgetMonths,
-            [monthKey]: {
-              ...month,
-              plannedExpenses
-            }
-          },
           plannedExpenses: []
         };
+        next = syncPlannedEntriesForMonth(next, monthKey, plannedExpenses);
         next = recomputeBudgetMonth(next, monthKey);
         return next;
       });
