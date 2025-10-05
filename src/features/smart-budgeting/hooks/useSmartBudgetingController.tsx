@@ -74,11 +74,13 @@ const PROGRESS_COLOR_BY_STATUS: Record<PlannedExpenseSpendingHealth, string> = {
 
 export type SmartBudgetingColumnKey =
   | 'category'
-  | 'earliestDue'
+  | 'item'
   | 'planned'
   | 'actual'
   | 'variance'
-  | 'actions';
+  | 'due'
+  | 'status'
+  | 'priority';
 
 type ColumnPreferences = {
   order: SmartBudgetingColumnKey[];
@@ -87,22 +89,26 @@ type ColumnPreferences = {
 };
 
 const DEFAULT_COLUMN_PREFERENCES: ColumnPreferences = {
-  order: ['category', 'earliestDue', 'planned', 'actual', 'variance', 'actions'],
+  order: ['category', 'item', 'planned', 'actual', 'variance', 'due', 'status', 'priority'],
   visible: {
     category: true,
-    earliestDue: true,
+    item: true,
     planned: true,
     actual: true,
     variance: true,
-    actions: true
+    due: true,
+    status: true,
+    priority: true
   },
   widths: {
-    category: 'minmax(0,2.6fr)',
-    earliestDue: 'minmax(110px,0.9fr)',
-    planned: 'minmax(120px,0.9fr)',
-    actual: 'minmax(120px,0.9fr)',
-    variance: 'minmax(120px,0.9fr)',
-    actions: 'minmax(220px,1fr)'
+    category: 'minmax(180px,1.4fr)',
+    item: 'minmax(220px,2fr)',
+    planned: 'minmax(120px,1fr)',
+    actual: 'minmax(150px,1.1fr)',
+    variance: 'minmax(130px,1fr)',
+    due: 'minmax(130px,0.9fr)',
+    status: 'minmax(160px,1.1fr)',
+    priority: 'minmax(120px,0.8fr)'
   }
 } as const satisfies ColumnPreferences;
 
