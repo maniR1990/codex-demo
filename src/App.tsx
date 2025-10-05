@@ -1,23 +1,35 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import { DashboardView } from './views/DashboardView';
-import { BalanceSheetView } from './views/BalanceSheetView';
-import { TrendAnalysisView } from './views/TrendAnalysisView';
-import { SmartBudgetingView } from './views/SmartBudgetingView';
-import { IncomeManagementView } from './views/IncomeManagementView';
-import { RecurringExpensesView } from './views/RecurringExpensesView';
-import { GoalSimulatorView } from './views/GoalSimulatorView';
-import { InsightsView } from './views/InsightsView';
-import { WealthAcceleratorView } from './views/WealthAcceleratorView';
-import { OfflineSyncStatus } from './components/OfflineSyncStatus';
+import { Route, Routes, useLocation } from 'react-router-dom';
+import { Button } from './components/atoms/Button';
 import { InitialSetupDialog } from './components/InitialSetupDialog';
+import { OfflineSyncStatus } from './components/OfflineSyncStatus';
 import { QuickExpenseCapture } from './components/QuickExpenseCapture';
+import { NavItem } from './components/molecules/NavItem';
+import { AppHeader } from './components/organisms/AppHeader/AppHeader';
+import { AppNavigation } from './components/organisms/AppNavigation/AppNavigation';
+import { AppShell } from './components/organisms/AppShell/AppShell';
+import { BalanceSheetView } from './views/BalanceSheetView';
+import { DashboardView } from './views/DashboardView';
+import { GoalSimulatorView } from './views/GoalSimulatorView';
+import { IncomeManagementView } from './views/IncomeManagementView';
+import { InsightsView } from './views/InsightsView';
+import { RecurringExpensesView } from './views/RecurringExpensesView';
+import { SmartBudgetingView } from './views/SmartBudgetingView';
+import { TrendAnalysisView } from './views/TrendAnalysisView';
+import { WealthAcceleratorView } from './views/WealthAcceleratorView';
 import { useFinancialStore } from './store/FinancialStoreProvider';
 
-const navLinkClass = ({ isActive }: { isActive: boolean }) =>
-  `px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
-    isActive ? 'bg-accent text-slate-900' : 'bg-slate-800 hover:bg-slate-700'
-  }`;
+const NAV_LINKS = [
+  { to: '/', label: 'CEO Dashboard', end: true },
+  { to: '/balance', label: 'Unified Balance Sheet' },
+  { to: '/trends', label: 'Trend Analysis' },
+  { to: '/budgeting', label: 'Smart Budgeting' },
+  { to: '/income', label: 'Income & Categories' },
+  { to: '/recurring', label: 'Recurring Expenses Hub' },
+  { to: '/goals', label: 'Goal Setting & Simulation' },
+  { to: '/insights', label: 'Actionable Insights' },
+  { to: '/accelerator', label: 'Wealth Accelerator Intelligence' }
+] as const;
 
 export default function App() {
   const [isNavOpen, setIsNavOpen] = useState(false);
@@ -71,50 +83,49 @@ export default function App() {
             isNavOpen ? 'max-h-[32rem] opacity-100' : 'max-h-0 opacity-0'
           } md:flex md:max-h-none md:opacity-100 md:overflow-visible`}
         >
-          <NavLink to="/" end className={navLinkClass}>
-            CEO Dashboard
-          </NavLink>
-          <NavLink to="/balance" className={navLinkClass}>
-            Unified Balance Sheet
-          </NavLink>
-          <NavLink to="/trends" className={navLinkClass}>
-            Trend Analysis
-          </NavLink>
-          <NavLink to="/budgeting" className={navLinkClass}>
-            Smart Budgeting
-          </NavLink>
-          <NavLink to="/income" className={navLinkClass}>
-            Income & Categories
-          </NavLink>
-          <NavLink to="/recurring" className={navLinkClass}>
-            Recurring Expenses Hub
-          </NavLink>
-          <NavLink to="/goals" className={navLinkClass}>
-            Goal Setting & Simulation
-          </NavLink>
-          <NavLink to="/insights" className={navLinkClass}>
-            Actionable Insights
-          </NavLink>
-          <NavLink to="/accelerator" className={navLinkClass}>
-            Wealth Accelerator Intelligence
-          </NavLink>
-        </nav>
-        <main className="flex-1 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg sm:p-6">
-          <Routes>
-            <Route path="/" element={<DashboardView />} />
-            <Route path="/balance" element={<BalanceSheetView />} />
-            <Route path="/trends" element={<TrendAnalysisView />} />
-            <Route path="/budgeting" element={<SmartBudgetingView />} />
-            <Route path="/income" element={<IncomeManagementView />} />
-            <Route path="/recurring" element={<RecurringExpensesView />} />
-            <Route path="/goals" element={<GoalSimulatorView />} />
-            <Route path="/insights" element={<InsightsView />} />
-            <Route path="/accelerator" element={<WealthAcceleratorView />} />
-          </Routes>
-        </main>
-      </div>
-      <QuickExpenseCapture />
-      <InitialSetupDialog />
-    </div>
+          Resume ledger setup
+        </Button>
+      ) : null}
+    </>
+  );
+
+  return (
+    <AppShell
+      header={
+        <AppHeader
+          title="Wealth Accelerator"
+          subtitle="Offline-first financial intelligence engine for Indian CEOs & households"
+          isNavOpen={isNavOpen}
+          onToggleNav={() => setIsNavOpen((open) => !open)}
+          rightSlot={headerRightSlot}
+        />
+      }
+      navigation={
+        <AppNavigation
+          isNavOpen={isNavOpen}
+          items={NAV_LINKS.map((link) => (
+            <NavItem key={link.to} to={link.to} end={link.end} label={link.label} />
+          ))}
+        />
+      }
+      footer={
+        <>
+          <QuickExpenseCapture />
+          <InitialSetupDialog />
+        </>
+      }
+    >
+      <Routes>
+        <Route path="/" element={<DashboardView />} />
+        <Route path="/balance" element={<BalanceSheetView />} />
+        <Route path="/trends" element={<TrendAnalysisView />} />
+        <Route path="/budgeting" element={<SmartBudgetingView />} />
+        <Route path="/income" element={<IncomeManagementView />} />
+        <Route path="/recurring" element={<RecurringExpensesView />} />
+        <Route path="/goals" element={<GoalSimulatorView />} />
+        <Route path="/insights" element={<InsightsView />} />
+        <Route path="/accelerator" element={<WealthAcceleratorView />} />
+      </Routes>
+    </AppShell>
   );
 }
