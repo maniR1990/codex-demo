@@ -164,7 +164,7 @@ export function PlannedExpenseItemCard({
             );
           case 'planned':
             return (
-              <div key={`${detail.item.id}-${column}`} className="flex flex-col gap-1 text-right">
+              <div key={`${detail.item.id}-${column}`} className="flex flex-col items-end gap-1 text-right">
                 {isEditing ? (
                   <>
                     <label className="text-[10px] uppercase text-slate-500 text-left">Planned amount</label>
@@ -189,7 +189,7 @@ export function PlannedExpenseItemCard({
             );
           case 'actual':
             return (
-              <div key={`${detail.item.id}-${column}`} className="flex flex-col gap-1 text-right">
+              <div key={`${detail.item.id}-${column}`} className="flex flex-col items-end gap-1 text-right">
                 {isEditing ? (
                   <>
                     <label className="text-[10px] uppercase text-slate-500 text-left">Actual spent</label>
@@ -218,7 +218,7 @@ export function PlannedExpenseItemCard({
             );
           case 'variance':
             return (
-              <div key={`${detail.item.id}-${column}`} className="flex flex-col gap-1 text-right">
+              <div key={`${detail.item.id}-${column}`} className="flex flex-col items-end gap-1 text-right">
                 <span className={`text-sm font-semibold ${detail.variance >= 0 ? 'text-success' : 'text-danger'}`}>
                   {utils.formatCurrency(detail.variance)}
                 </span>
