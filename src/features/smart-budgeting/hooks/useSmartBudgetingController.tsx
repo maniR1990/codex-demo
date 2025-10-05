@@ -78,7 +78,7 @@ function generateEntryId() {
 
 export function useSmartBudgetingController() {
   const {
-    plannedExpenses,
+    allBudgetedPlannedExpenses,
     categories,
     transactions,
     addPlannedExpense,
@@ -267,7 +267,7 @@ export function useSmartBudgetingController() {
 
   const periodPlannedExpenses = useMemo(
     () =>
-      plannedExpenses.filter((item) => {
+      allBudgetedPlannedExpenses.filter((item) => {
         if (item.status === 'cancelled') {
           return false;
         }
@@ -276,7 +276,7 @@ export function useSmartBudgetingController() {
           ? monthKey(referenceDate) === selectedMonth
           : yearKey(referenceDate) === selectedYear;
       }),
-    [plannedExpenses, viewMode, selectedMonth, selectedYear]
+    [allBudgetedPlannedExpenses, viewMode, selectedMonth, selectedYear]
   );
 
   const periodTransactions = useMemo(

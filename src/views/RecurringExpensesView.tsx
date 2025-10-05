@@ -14,7 +14,7 @@ export function RecurringExpensesView() {
     recurringExpenses,
     categories,
     transactions,
-    plannedExpenses,
+    allBudgetedPlannedExpenses,
     addRecurringExpense,
     updateRecurringExpense,
     deleteRecurringExpense
@@ -68,7 +68,7 @@ export function RecurringExpensesView() {
       frequency?: Frequency;
     }> = [];
 
-    plannedExpenses.forEach((item) => {
+    allBudgetedPlannedExpenses.forEach((item) => {
       if (!billCategoryIds.has(item.categoryId)) return;
       const due = new Date(item.dueDate).getTime();
       if (due >= startOfToday.getTime() && due <= horizon) {
@@ -100,7 +100,7 @@ export function RecurringExpensesView() {
 
     reminders.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
     return reminders;
-  }, [plannedExpenses, recurringExpenses, billCategoryIds]);
+  }, [allBudgetedPlannedExpenses, recurringExpenses, billCategoryIds]);
 
   const reconciliation = useMemo(() => {
     return recurringExpenses.map((expense) => {

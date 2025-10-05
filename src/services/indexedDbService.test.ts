@@ -58,6 +58,7 @@ const buildSnapshot = (timestamp: string): FinancialSnapshot => ({
     }
   ],
   plannedExpenses: [],
+  budgetMonths: {},
   recurringExpenses: [],
   goals: [],
   insights: [

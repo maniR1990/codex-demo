@@ -108,7 +108,7 @@ export function IncomeManagementView() {
     monthlyIncomes,
     categories,
     transactions,
-    plannedExpenses,
+    allBudgetedPlannedExpenses,
     addMonthlyIncome,
     updateMonthlyIncome,
     deleteMonthlyIncome,
@@ -179,16 +179,16 @@ export function IncomeManagementView() {
   const categoryMonthOptions = useMemo(() => {
     const months = new Set<string>([selectedCategoryMonth, defaultMonth]);
     transactions.forEach((txn) => months.add(monthKey(txn.date)));
-    plannedExpenses.forEach((item) => months.add(monthKey(item.dueDate ?? item.createdAt)));
+    allBudgetedPlannedExpenses.forEach((item) => months.add(monthKey(item.dueDate ?? item.createdAt)));
     return Array.from(months).sort((a, b) => (a > b ? -1 : 1));
-  }, [transactions, plannedExpenses, selectedCategoryMonth, defaultMonth]);
+  }, [transactions, allBudgetedPlannedExpenses, selectedCategoryMonth, defaultMonth]);
 
   const categoryYearOptions = useMemo(() => {
     const years = new Set<string>([selectedCategoryYear, defaultYear]);
     transactions.forEach((txn) => years.add(yearKey(txn.date)));
-    plannedExpenses.forEach((item) => years.add(yearKey(item.dueDate ?? item.createdAt)));
+    allBudgetedPlannedExpenses.forEach((item) => years.add(yearKey(item.dueDate ?? item.createdAt)));
     return Array.from(years).sort((a, b) => (a > b ? -1 : 1));
-  }, [transactions, plannedExpenses, selectedCategoryYear, defaultYear]);
+  }, [transactions, allBudgetedPlannedExpenses, selectedCategoryYear, defaultYear]);
 
   const filteredIncomes = useMemo(
     () =>
@@ -256,12 +256,12 @@ export function IncomeManagementView() {
 
   const relevantPlannedExpenses = useMemo(
     () =>
-      plannedExpenses.filter((item) =>
+      allBudgetedPlannedExpenses.filter((item) =>
         categoryViewMode === 'monthly'
           ? monthKey(item.dueDate ?? item.createdAt) === selectedCategoryMonth
           : yearKey(item.dueDate ?? item.createdAt) === selectedCategoryYear
       ),
-    [plannedExpenses, categoryViewMode, selectedCategoryMonth, selectedCategoryYear]
+    [allBudgetedPlannedExpenses, categoryViewMode, selectedCategoryMonth, selectedCategoryYear]
   );
 
   const transactionMap = useMemo(() => {

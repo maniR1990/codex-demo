@@ -11,6 +11,8 @@ import {
 } from 'react';
 import type {
   Account,
+  BudgetMonth,
+  BudgetMonthTotals,
   Category,
   ExportEvent,
   FinancialSnapshot,
@@ -62,6 +64,117 @@ const normaliseOptionalNumber = (value: number | null | undefined): number | nul
     return null;
   }
   return value;
+};
+
+const budgetMonthKey = (date?: string | null): string => {
+  if (!date) {
+    return new Date().toISOString().slice(0, 7);
+  }
+  return date.slice(0, 7);
+};
+
+const emptyTotals = (): BudgetMonthTotals => ({
+  planned: 0,
+  actual: 0,
+  recurring: 0,
+  rollover: 0,
+  unassignedActuals: 0,
+  variance: 0
+});
+
+const createBudgetMonth = (month: string, timestamp: string): BudgetMonth => ({
+  month,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  plannedExpenses: [],
+  recurringAllocations: [],
+  rollovers: [],
+  unassignedActuals: [],
+  totals: emptyTotals()
+});
+
+const cloneBudgetMonth = (month: BudgetMonth, timestamp: string, key: string): BudgetMonth => ({
+  ...month,
+  month: month.month ?? key,
+  plannedExpenses: [...(month.plannedExpenses ?? [])],
+  recurringAllocations: [...(month.recurringAllocations ?? [])],
+  rollovers: [...(month.rollovers ?? [])],
+  unassignedActuals: [...(month.unassignedActuals ?? [])],
+  totals: { ...(month.totals ?? emptyTotals()) },
+  updatedAt: timestamp
+});
+
+const computeBudgetTotals = (month: BudgetMonth): BudgetMonthTotals => {
+  const planned = month.plannedExpenses.reduce((sum, item) => sum + item.plannedAmount, 0);
+  const actual = month.plannedExpenses.reduce((sum, item) => sum + (item.actualAmount ?? 0), 0);
+  const recurring = month.recurringAllocations.reduce((sum, item) => sum + item.amount, 0);
+  const rollover = month.rollovers.reduce((sum, item) => sum + (item.remainderAmount ?? 0), 0);
+  const unassignedActuals = month.unassignedActuals.reduce((sum, item) => sum + item.amount, 0);
+  const variance = planned + recurring + rollover - actual - unassignedActuals;
+  return { planned, actual, recurring, rollover, unassignedActuals, variance };
+};
+
+export const ensureBudgetMonth = (
+  snapshot: FinancialSnapshot,
+  key: string
+): FinancialSnapshot => {
+  if (!key) {
+    return snapshot;
+  }
+  const existing = snapshot.budgetMonths?.[key];
+  if (existing) {
+    return snapshot;
+  }
+  const timestamp = new Date().toISOString();
+  return {
+    ...snapshot,
+    budgetMonths: {
+      ...snapshot.budgetMonths,
+      [key]: createBudgetMonth(key, timestamp)
+    }
+  };
+};
+
+export const recomputeBudgetMonth = (
+  snapshot: FinancialSnapshot,
+  key: string
+): FinancialSnapshot => {
+  if (!key) {
+    return snapshot;
+  }
+  const current = snapshot.budgetMonths[key];
+  if (!current) {
+    return snapshot;
+  }
+  const timestamp = new Date().toISOString();
+  const nextMonth = cloneBudgetMonth(current, timestamp, key);
+  nextMonth.recurringAllocations = snapshot.recurringExpenses.filter((expense) => {
+    const reference = expense.nextDueDate ?? expense.dueDate ?? expense.createdAt;
+    return budgetMonthKey(reference) === key;
+  });
+  nextMonth.totals = computeBudgetTotals(nextMonth);
+  return {
+    ...snapshot,
+    budgetMonths: {
+      ...snapshot.budgetMonths,
+      [key]: nextMonth
+    }
+  };
+};
+
+const flattenBudgetMonths = (months: Record<string, BudgetMonth>): PlannedExpenseItem[] =>
+  Object.values(months).flatMap((month) => month.plannedExpenses);
+
+const findPlannedExpenseMonthKey = (
+  snapshot: FinancialSnapshot,
+  id: string
+): string | undefined => {
+  for (const [key, month] of Object.entries(snapshot.budgetMonths)) {
+    if (month.plannedExpenses.some((item) => item.id === id)) {
+      return key;
+    }
+  }
+  return undefined;
 };
 
 interface InitialSetupPayload {
@@ -137,7 +250,14 @@ interface FinancialStoreActions {
   resetLedger(): Promise<void>;
 }
 
-type FinancialStoreContextValue = FinancialStoreState & FinancialStoreActions;
+interface FinancialStoreSelectors {
+  budgetMonthsList: BudgetMonth[];
+  allBudgetedPlannedExpenses: PlannedExpenseItem[];
+  getBudgetMonth: (monthKey: string) => BudgetMonth | undefined;
+  budgetSummary: BudgetMonthTotals;
+}
+
+type FinancialStoreContextValue = FinancialStoreState & FinancialStoreActions & FinancialStoreSelectors;
 
 type FinancialReducerAction =
   | { type: 'replace'; state: FinancialStoreState }
@@ -204,26 +324,75 @@ const createDefaultSnapshot = (): FinancialSnapshot => {
 
 const deriveFromSnapshot = (snapshot: FinancialSnapshot): FinancialSnapshot => {
   const now = new Date().toISOString();
+  let working: FinancialSnapshot = {
+    ...snapshot,
+    budgetMonths: { ...snapshot.budgetMonths }
+  };
+  const touchedMonths = new Set<string>();
+
+  if (working.plannedExpenses.length > 0) {
+    for (const expense of working.plannedExpenses) {
+      const key = budgetMonthKey(expense.dueDate ?? expense.createdAt);
+      touchedMonths.add(key);
+      working = ensureBudgetMonth(working, key);
+      const month = working.budgetMonths[key];
+      const timestampedExpense: PlannedExpenseItem = {
+        ...expense,
+        createdAt: expense.createdAt ?? now,
+        updatedAt: expense.updatedAt ?? now
+      };
+      const index = month.plannedExpenses.findIndex((item) => item.id === expense.id);
+      const plannedExpenses = index >= 0
+        ? month.plannedExpenses.map((item) => (item.id === expense.id ? timestampedExpense : item))
+        : [...month.plannedExpenses, timestampedExpense];
+      working = {
+        ...working,
+        budgetMonths: {
+          ...working.budgetMonths,
+          [key]: {
+            ...month,
+            plannedExpenses
+          }
+        }
+      };
+    }
+    working = { ...working, plannedExpenses: [] };
+  }
+
+  for (const expense of working.recurringExpenses) {
+    const key = budgetMonthKey(expense.nextDueDate ?? expense.dueDate ?? expense.createdAt);
+    touchedMonths.add(key);
+    working = ensureBudgetMonth(working, key);
+  }
+
+  Object.keys(working.budgetMonths).forEach((key) => touchedMonths.add(key));
+
+  for (const key of touchedMonths) {
+    working = recomputeBudgetMonth(working, key);
+  }
+
+  const flattenedPlanned = flattenBudgetMonths(working.budgetMonths);
+
   const wealthMetrics = {
     ...simulateWealthAccelerator(
-      snapshot.accounts,
-      snapshot.transactions,
-      snapshot.goals,
-      snapshot.recurringExpenses,
-      snapshot.monthlyIncomes
+      working.accounts,
+      working.transactions,
+      working.goals,
+      working.recurringExpenses,
+      working.monthlyIncomes
     ),
     updatedAt: now
   };
 
   const insights: Insight[] = generateInsights({
-    accounts: snapshot.accounts,
-    transactions: snapshot.transactions,
-    recurringExpenses: snapshot.recurringExpenses,
-    plannedExpenses: snapshot.plannedExpenses,
-    goals: snapshot.goals,
-    categories: snapshot.categories,
-    monthlyIncomes: snapshot.monthlyIncomes,
-    currency: snapshot.profile?.currency
+    accounts: working.accounts,
+    transactions: working.transactions,
+    recurringExpenses: working.recurringExpenses,
+    plannedExpenses: flattenedPlanned,
+    goals: working.goals,
+    categories: working.categories,
+    monthlyIncomes: working.monthlyIncomes,
+    currency: working.profile?.currency
   }).map((insight) => ({
     ...insight,
     createdAt: insight.createdAt ?? now,
@@ -231,7 +400,8 @@ const deriveFromSnapshot = (snapshot: FinancialSnapshot): FinancialSnapshot => {
   }));
 
   return normaliseSnapshot({
-    ...snapshot,
+    ...working,
+    plannedExpenses: [],
     wealthMetrics,
     insights
   });
@@ -243,7 +413,14 @@ const isSnapshotInitialised = (snapshot: Partial<FinancialSnapshot>): boolean =>
       (snapshot.accounts && snapshot.accounts.length > 0) ||
       (snapshot.transactions && snapshot.transactions.length > 0) ||
       (snapshot.monthlyIncomes && snapshot.monthlyIncomes.length > 0) ||
-      (snapshot.plannedExpenses && snapshot.plannedExpenses.length > 0) ||
+      (snapshot.budgetMonths &&
+        Object.values(snapshot.budgetMonths).some(
+          (month) =>
+            month?.plannedExpenses?.length ||
+            month?.recurringAllocations?.length ||
+            month?.totals?.planned ||
+            month?.totals?.recurring
+        )) ||
       (snapshot.recurringExpenses && snapshot.recurringExpenses.length > 0)
   );
 
@@ -640,31 +817,100 @@ function useFinancialActions(container: FinancialStoreContainer): FinancialStore
         createdAt: now,
         updatedAt: now
       };
-      await persistAndSet((snapshot) => ({
-        ...snapshot,
-        plannedExpenses: [...snapshot.plannedExpenses, item]
-      }));
+      await persistAndSet((snapshot) => {
+        const key = budgetMonthKey(item.dueDate ?? item.createdAt);
+        let next = ensureBudgetMonth(snapshot, key);
+        const month = next.budgetMonths[key];
+        next = {
+          ...next,
+          budgetMonths: {
+            ...next.budgetMonths,
+            [key]: {
+              ...month,
+              plannedExpenses: [...month.plannedExpenses, item]
+            }
+          },
+          plannedExpenses: []
+        };
+        return recomputeBudgetMonth(next, key);
+      });
       return item;
     },
     async updatePlannedExpense(id, payload) {
-      await persistAndSet((snapshot) => ({
-        ...snapshot,
-        plannedExpenses: snapshot.plannedExpenses.map((expense) =>
-          expense.id === id
-            ? {
-                ...expense,
-                ...payload,
-                updatedAt: new Date().toISOString()
-              }
-            : expense
-        )
-      }));
+      await persistAndSet((snapshot) => {
+        const monthKey = findPlannedExpenseMonthKey(snapshot, id);
+        if (!monthKey) {
+          return snapshot;
+        }
+        const currentMonth = snapshot.budgetMonths[monthKey];
+        const currentExpense = currentMonth.plannedExpenses.find((expense) => expense.id === id);
+        if (!currentExpense) {
+          return snapshot;
+        }
+        const now = new Date().toISOString();
+        const updatedExpense: PlannedExpenseItem = {
+          ...currentExpense,
+          ...payload,
+          updatedAt: now
+        };
+        const nextMonthKey = budgetMonthKey(updatedExpense.dueDate ?? updatedExpense.createdAt);
+        const touched = new Set([monthKey, nextMonthKey]);
+        let next = ensureBudgetMonth(snapshot, nextMonthKey);
+        const withoutCurrent = next.budgetMonths[monthKey].plannedExpenses.filter((expense) => expense.id !== id);
+        next = {
+          ...next,
+          budgetMonths: {
+            ...next.budgetMonths,
+            [monthKey]: {
+              ...next.budgetMonths[monthKey],
+              plannedExpenses: withoutCurrent
+            }
+          },
+          plannedExpenses: []
+        };
+        const destinationMonth = next.budgetMonths[nextMonthKey];
+        const existingIndex = destinationMonth.plannedExpenses.findIndex((expense) => expense.id === id);
+        const updatedPlanned = existingIndex >= 0
+          ? destinationMonth.plannedExpenses.map((expense) => (expense.id === id ? updatedExpense : expense))
+          : [...destinationMonth.plannedExpenses, updatedExpense];
+        next = {
+          ...next,
+          budgetMonths: {
+            ...next.budgetMonths,
+            [nextMonthKey]: {
+              ...destinationMonth,
+              plannedExpenses: updatedPlanned
+            }
+          }
+        };
+        for (const key of touched) {
+          next = recomputeBudgetMonth(next, key);
+        }
+        return next;
+      });
     },
     async deletePlannedExpense(id) {
-      await persistAndSet((snapshot) => ({
-        ...snapshot,
-        plannedExpenses: snapshot.plannedExpenses.filter((expense) => expense.id !== id)
-      }));
+      await persistAndSet((snapshot) => {
+        const monthKey = findPlannedExpenseMonthKey(snapshot, id);
+        if (!monthKey) {
+          return snapshot;
+        }
+        const month = snapshot.budgetMonths[monthKey];
+        const plannedExpenses = month.plannedExpenses.filter((expense) => expense.id !== id);
+        let next: FinancialSnapshot = {
+          ...snapshot,
+          budgetMonths: {
+            ...snapshot.budgetMonths,
+            [monthKey]: {
+              ...month,
+              plannedExpenses
+            }
+          },
+          plannedExpenses: []
+        };
+        next = recomputeBudgetMonth(next, monthKey);
+        return next;
+      });
     },
     async addRecurringExpense(payload) {
       const now = new Date().toISOString();
@@ -674,31 +920,63 @@ function useFinancialActions(container: FinancialStoreContainer): FinancialStore
         createdAt: now,
         updatedAt: now
       };
-      await persistAndSet((snapshot) => ({
-        ...snapshot,
-        recurringExpenses: [...snapshot.recurringExpenses, expense]
-      }));
+      await persistAndSet((snapshot) => {
+        const key = budgetMonthKey(expense.nextDueDate ?? expense.dueDate ?? expense.createdAt);
+        let next: FinancialSnapshot = {
+          ...snapshot,
+          recurringExpenses: [...snapshot.recurringExpenses, expense]
+        };
+        next = ensureBudgetMonth(next, key);
+        next = recomputeBudgetMonth(next, key);
+        return next;
+      });
       return expense;
     },
     async updateRecurringExpense(id, payload) {
-      await persistAndSet((snapshot) => ({
-        ...snapshot,
-        recurringExpenses: snapshot.recurringExpenses.map((expense) =>
-          expense.id === id
-            ? {
-                ...expense,
-                ...payload,
-                updatedAt: new Date().toISOString()
-              }
-            : expense
-        )
-      }));
+      await persistAndSet((snapshot) => {
+        const existing = snapshot.recurringExpenses.find((expense) => expense.id === id);
+        if (!existing) {
+          return snapshot;
+        }
+        const now = new Date().toISOString();
+        const updatedExpense: RecurringExpense = {
+          ...existing,
+          ...payload,
+          updatedAt: now
+        };
+        let next: FinancialSnapshot = {
+          ...snapshot,
+          recurringExpenses: snapshot.recurringExpenses.map((expense) =>
+            expense.id === id ? updatedExpense : expense
+          )
+        };
+        const previousKey = budgetMonthKey(existing.nextDueDate ?? existing.dueDate ?? existing.createdAt);
+        const nextKey = budgetMonthKey(
+          updatedExpense.nextDueDate ?? updatedExpense.dueDate ?? updatedExpense.createdAt
+        );
+        next = ensureBudgetMonth(next, previousKey);
+        next = ensureBudgetMonth(next, nextKey);
+        for (const key of new Set([previousKey, nextKey])) {
+          next = recomputeBudgetMonth(next, key);
+        }
+        return next;
+      });
     },
     async deleteRecurringExpense(id) {
-      await persistAndSet((snapshot) => ({
-        ...snapshot,
-        recurringExpenses: snapshot.recurringExpenses.filter((expense) => expense.id !== id)
-      }));
+      await persistAndSet((snapshot) => {
+        const existing = snapshot.recurringExpenses.find((expense) => expense.id === id);
+        const next: FinancialSnapshot = {
+          ...snapshot,
+          recurringExpenses: snapshot.recurringExpenses.filter((expense) => expense.id !== id)
+        };
+        if (!existing) {
+          return next;
+        }
+        const key = budgetMonthKey(existing.nextDueDate ?? existing.dueDate ?? existing.createdAt);
+        let ensured = ensureBudgetMonth(next, key);
+        ensured = recomputeBudgetMonth(ensured, key);
+        return ensured;
+      });
     },
     async addManualAccount(payload) {
       const now = new Date().toISOString();
@@ -851,5 +1129,28 @@ export function useFinancialStore() {
     container.store.getState
   );
   const actions = useFinancialActions(container);
-  return useMemo<FinancialStoreContextValue>(() => ({ ...state, ...actions }), [actions, state]);
+  const selectors = useMemo<FinancialStoreSelectors>(() => {
+    const map = state.budgetMonths ?? {};
+    const budgetMonthsList = Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
+    const allBudgetedPlannedExpenses = budgetMonthsList.flatMap((month) => month.plannedExpenses);
+    const budgetSummary = budgetMonthsList.reduce<BudgetMonthTotals>((acc, month) => ({
+      planned: acc.planned + month.totals.planned,
+      actual: acc.actual + month.totals.actual,
+      recurring: acc.recurring + month.totals.recurring,
+      rollover: acc.rollover + month.totals.rollover,
+      unassignedActuals: acc.unassignedActuals + month.totals.unassignedActuals,
+      variance: acc.variance + month.totals.variance
+    }), emptyTotals());
+    const getBudgetMonth = (monthKey: string) => map[monthKey];
+    return {
+      budgetMonthsList,
+      allBudgetedPlannedExpenses,
+      getBudgetMonth,
+      budgetSummary
+    } satisfies FinancialStoreSelectors;
+  }, [state.budgetMonths]);
+  return useMemo<FinancialStoreContextValue>(
+    () => ({ ...state, ...actions, ...selectors }),
+    [actions, selectors, state]
+  );
 }
