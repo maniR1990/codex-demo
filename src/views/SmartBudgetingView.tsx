@@ -21,20 +21,20 @@ export function SmartBudgetingView() {
     <div className="space-y-6">
       <PlannedExpensesDialog dialog={dialog} utils={utils} />
 
-      <SummaryHeaderControls
-        period={period}
-        table={table}
-        onOpenDialog={dialog.open}
-        onExpandAll={categories.expandAllCategories}
-        onCollapseAll={categories.collapseAllCategories}
-      />
+      <SummaryHeaderControls period={period} />
 
       <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <SummaryGrid overview={overview} categories={categories} utils={utils} />
         <CategoryInspector inspector={inspector} utils={utils} />
       </section>
 
-      <NavigatorFilters categories={categories} />
+      <NavigatorFilters
+        categories={categories}
+        table={table}
+        onOpenDialog={dialog.open}
+        onExpandAll={categories.expandAllCategories}
+        onCollapseAll={categories.collapseAllCategories}
+      />
 
       <CategoryNavigator categories={categories} editing={editing} table={table} utils={utils} />
 

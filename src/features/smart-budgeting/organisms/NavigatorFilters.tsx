@@ -1,8 +1,13 @@
+import { useId } from 'react';
 import type { JSX } from 'react';
 import type { SmartBudgetingController } from '../hooks/useSmartBudgetingController';
 
 interface NavigatorFiltersProps {
   categories: SmartBudgetingController['categories'];
+  table: SmartBudgetingController['table'];
+  onOpenDialog: () => void;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
 }
 
 const statusIcons: Record<'all' | 'over' | 'under' | 'not-spent', JSX.Element> = {
@@ -93,7 +98,7 @@ const resetIcon = (
   </svg>
 );
 
-export function NavigatorFilters({ categories }: NavigatorFiltersProps) {
+export function NavigatorFilters({ categories, table, onOpenDialog, onExpandAll, onCollapseAll }: NavigatorFiltersProps) {
   const {
     navigatorFilter,
     setNavigatorFilter,
@@ -105,6 +110,15 @@ export function NavigatorFilters({ categories }: NavigatorFiltersProps) {
     setCategorySearchTerm,
     handleResetFilters
   } = categories;
+  const columnMenuId = useId();
+  const columnLabels: Record<SmartBudgetingController['table']['columnPreferences']['order'][number], string> = {
+    category: 'Category / Planned items',
+    earliestDue: 'Earliest due date',
+    planned: 'Planned amount',
+    actual: 'Actual amount',
+    variance: 'Variance / remaining',
+    actions: 'Actions'
+  } as const;
 
   return (
     <section className="flex flex-wrap items-end gap-4">
@@ -168,6 +182,89 @@ export function NavigatorFilters({ categories }: NavigatorFiltersProps) {
             <span className="text-current [&>svg]:h-4 [&>svg]:w-4">{resetIcon}</span>
             <span className="whitespace-nowrap">Reset</span>
           </button>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenDialog}
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-accent/90"
+          >
+            + Plan expenses
+          </button>
+          <button
+            type="button"
+            onClick={onExpandAll}
+            aria-label="Expand all"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-slate-500 hover:text-accent"
+          >
+            <svg
+              aria-hidden="true"
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={onCollapseAll}
+            aria-label="Collapse all"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-slate-500 hover:text-accent"
+          >
+            <svg
+              aria-hidden="true"
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M5 12h14" />
+            </svg>
+          </button>
+          <details className="relative">
+            <summary
+              className="flex cursor-pointer list-none items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500"
+              aria-haspopup="menu"
+              aria-controls={columnMenuId}
+            >
+              Columns
+              <span aria-hidden className="text-[10px] text-slate-500">({table.visibleColumns.length})</span>
+            </summary>
+            <div
+              id={columnMenuId}
+              className="absolute right-0 z-10 mt-2 w-64 space-y-3 rounded-lg border border-slate-800 bg-slate-950/90 p-3 text-xs text-slate-200 shadow-xl shadow-slate-950/40"
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Visible columns</p>
+              <div className="space-y-2">
+                {table.columnPreferences.order.map((column) => (
+                  <label key={column} className="flex items-center justify-between gap-3 text-xs text-slate-200">
+                    <span>{columnLabels[column]}</span>
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-accent focus:ring-accent"
+                      checked={table.columnPreferences.visible[column]}
+                      onChange={() => table.toggleColumnVisibility(column)}
+                    />
+                  </label>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={table.resetColumnPreferences}
+                className="w-full rounded-md border border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
+              >
+                Reset to default
+              </button>
+            </div>
+          </details>
         </div>
       </div>
     </section>
