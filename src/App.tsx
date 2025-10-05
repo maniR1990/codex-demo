@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import { Button } from './components/atoms/Button';
 import { InitialSetupDialog } from './components/InitialSetupDialog';
@@ -67,14 +67,7 @@ export default function App() {
           rightSlot={headerRightSlot}
         />
       }
-      navigation={
-        <AppNavigation
-          isNavOpen={isNavOpen}
-          items={NAV_LINKS.map((link) => (
-            <NavItem key={link.to} to={link.to} end={link.end} label={link.label} />
-          ))}
-        />
-      }
+      navigation={<AppNavigation isNavOpen={isNavOpen} items={navigationItems} />}
       footer={
         <>
           <QuickExpenseCapture />
