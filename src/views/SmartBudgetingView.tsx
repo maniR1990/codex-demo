@@ -1135,100 +1135,6 @@ export function SmartBudgetingView() {
               </div>
             )}
           </div>
-          <div className="text-right">
-            {isEditing ? (
-              <div className="space-y-1">
-                <input
-                  type="number"
-                  min={0}
-                  className={`w-full rounded-md border bg-slate-950/80 px-3 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
-                    hasPlannedError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
-                  }`}
-                  value={editDraft.plannedAmount}
-                  onChange={(event) => setEditDraft((prev) => ({ ...prev, plannedAmount: event.target.value }))}
-                  disabled={isSaving}
-                />
-                {hasPlannedError && <p className="text-[10px] text-danger">Enter a valid planned amount.</p>}
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <div className="text-sm font-semibold text-warning">{formatCurrency(detail.item.plannedAmount)}</div>
-                <div className="text-[10px] text-slate-500">Planned</div>
-              </div>
-            )}
-          </div>
-          <div className="text-right">
-            {isEditing ? (
-              <div className="space-y-1">
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="Auto from transactions"
-                  className={`w-full rounded-md border bg-slate-950/80 px-3 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none ${
-                    hasActualError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
-                  }`}
-                  value={editDraft.actualAmount}
-                  onChange={(event) => setEditDraft((prev) => ({ ...prev, actualAmount: event.target.value }))}
-                  disabled={isRemainderProvided || isSaving}
-                />
-                {hasActualError && <p className="text-[10px] text-danger">Enter a valid spent amount.</p>}
-              </div>
-            ) : (
-              <div className={`space-y-1 rounded-md border border-slate-800/70 px-3 py-1.5 text-right ${actualBackgroundClass}`}>
-                <div className={`text-sm font-semibold ${actualToneClass}`}>{formatCurrency(detail.actual)}</div>
-                <div className="text-[10px] text-slate-500">Spent</div>
-              </div>
-            )}
-          </div>
-          <div className="text-right">
-            <div className={`text-sm font-semibold ${remainderColor}`}>{formatCurrency(detail.variance)}</div>
-            <div className="text-[10px] text-slate-500">{varianceLabel}</div>
-            <div className="text-[10px] text-slate-500">Utilisation {Math.round(progressPercent)}%</div>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            {!isEditing && (
-              <form className="flex w-full items-center justify-end gap-2" onSubmit={handleSubmitQuickActual}>
-                <input
-                  type="number"
-                  min={0}
-                  value={quickActualDraft}
-                  onChange={(event) => handleQuickActualChange(detail.item.id, event.target.value)}
-                  placeholder={quickPlaceholder || 'Spent'}
-                  className={`w-24 rounded-md border bg-slate-950/80 px-2 py-1 text-xs text-slate-100 focus:border-accent focus:outline-none ${
-                    hasQuickActualError ? 'border-danger text-danger focus:border-danger' : 'border-slate-700'
-                  }`}
-                />
-                <button
-                  type="submit"
-                  disabled={hasQuickActualError || quickActualValue === undefined || isQuickSaving}
-                  className="rounded-md bg-accent px-2 py-1 text-[11px] font-semibold text-slate-900 transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isQuickSaving ? 'Saving…' : 'Save'}
-                </button>
-              </form>
-            )}
-            {hasQuickActualError && !isEditing && (
-              <p className="text-[10px] text-danger">Enter a valid amount to save.</p>
-            )}
-            <div className="flex flex-wrap justify-end gap-1 text-[10px]">
-              <button
-                type="button"
-                className="rounded-full bg-success/15 px-2 py-1 font-semibold text-success hover:bg-success/25"
-                onClick={() => updatePlannedExpense(detail.item.id, { status: 'purchased' })}
-              >
-                {isCurrentCategoryMissing && (
-                  <option value={detail.item.categoryId}>
-                    {categories.find((cat) => cat.id === detail.item.categoryId)?.name ?? 'Uncategorised'}
-                  </option>
-                )}
-                {categoryOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
         <div className="flex flex-col justify-center gap-1 text-xs text-slate-300">
           <span className="text-sm font-semibold text-slate-100">{dueDateLabel}</span>
@@ -1245,6 +1151,7 @@ export function SmartBudgetingView() {
                 }`}
                 value={editDraft.plannedAmount}
                 onChange={(event) => setEditDraft((prev) => ({ ...prev, plannedAmount: event.target.value }))}
+                disabled={isSaving}
               />
               {hasPlannedError && <p className="text-[10px] text-danger">Enter a valid planned amount.</p>}
             </div>
@@ -1267,6 +1174,7 @@ export function SmartBudgetingView() {
                 }`}
                 value={editDraft.actualAmount}
                 onChange={(event) => setEditDraft((prev) => ({ ...prev, actualAmount: event.target.value }))}
+                disabled={isRemainderProvided || isSaving}
               />
               {hasActualError && <p className="text-[10px] text-danger">Enter a valid spent amount.</p>}
             </div>
@@ -1754,397 +1662,23 @@ export function SmartBudgetingView() {
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-4">
-            <div>
-              <h3 className="text-lg font-semibold">Budget vs Actuals</h3>
-              <p className="text-xs text-slate-500">Including all planned variable expenses in the selected window</p>
-            </div>
-
-            <div className="flex flex-col gap-3 text-xs text-slate-400">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 text-sm">
-                  <button
-                    type="button"
-                    onClick={goToPreviousPeriod}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800 bg-slate-950 text-lg text-slate-400 transition hover:border-slate-700 hover:text-slate-100"
-                    aria-label="Previous period"
-                  >
-                    ‹
-                  </button>
-                  <span className="text-base font-semibold text-slate-100 sm:text-lg">{periodLabel}</span>
-                  <button
-                    type="button"
-                    onClick={goToNextPeriod}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800 bg-slate-950 text-lg text-slate-400 transition hover:border-slate-700 hover:text-slate-100"
-                    aria-label="Next period"
-                  >
-                    ›
-                  </button>
-                </div>
-                <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-1 text-[11px] font-semibold sm:text-xs">
-                  <button
-                    type="button"
-                    onClick={() => handleViewModeChange('monthly')}
-                    className={`rounded-md px-3 py-1 transition ${
-                      viewMode === 'monthly'
-                        ? 'bg-accent text-slate-900'
-                        : 'text-slate-300 hover:text-slate-100'
-                    }`}
-                  >
-                    Monthly
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleViewModeChange('yearly')}
-                    className={`rounded-md px-3 py-1 transition ${
-                      viewMode === 'yearly'
-                        ? 'bg-accent text-slate-900'
-                        : 'text-slate-300 hover:text-slate-100'
-                    }`}
-                  >
-                    Yearly
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <select
-                  className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs font-medium text-slate-200 sm:text-sm"
-                  value={selectedCategoryId}
-                  onChange={(event) => setSelectedCategoryId(event.target.value as 'all' | string)}
-                >
-                  <option value="all">All categories</option>
-                  {expenseCategories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-                <span className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-300">
-                  Period: {periodLabel}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-sm">
-            Planned: <span className="font-semibold text-warning">{formatCurrency(totalsForAll.totalPlanned)}</span>{' '}
-            Actual: <span className="font-semibold text-danger">{formatCurrency(totalsForAll.actualTotal)}</span>{' '}
-            Variance:{' '}
-            <span
-              className={`font-semibold ${
-                totalsForAll.totalPlanned - totalsForAll.actualTotal >= 0 ? 'text-success' : 'text-danger'
-              }`}
-            >
-              {formatCurrency(totalsForAll.totalPlanned - totalsForAll.actualTotal)}
-            </span>
-          </div>
-        </div>
-
-        <div className="mt-4 flex justify-end">
-          <button
-            type="button"
-            onClick={handleOpenDialog}
-            className="inline-flex items-center rounded-lg bg-success px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-emerald-400"
-          >
-            Add planned expense
-          </button>
-        </div>
-
-        <div className="mt-6 grid gap-6 lg:grid-cols-[2fr,1fr]">
-          <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Planned vs Spent</h4>
-            <p className="text-xs text-slate-500">
-              Comparing planned items and category budgets against realised spending for the selected category.
-            </p>
-            <div className="mt-4 space-y-3">
-              {[{ label: 'Planned', value: totalsForSelected.totalPlanned, color: '#38bdf8' }, { label: 'Actual', value: totalsForSelected.actualTotal, color: '#ef4444' }].map((item) => {
-                const maxValue = Math.max(totalsForSelected.totalPlanned, totalsForSelected.actualTotal, 1);
-                const width = Math.max(6, Math.min(100, (item.value / maxValue) * 100));
-                return (
-                  <div key={item.label}>
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span>{item.label}</span>
-                      <span className="font-semibold text-slate-200">{formatCurrency(item.value)}</span>
-                    </div>
-                    <div className="mt-1 h-3 rounded-full bg-slate-800">
-                      <div
-                        className="h-3 rounded-full"
-                        style={{ width: `${width}%`, backgroundColor: item.color }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm">
-            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Category summary</h4>
-            <p className="mt-1 text-xs text-slate-500">
-              Focus: {selectedCategoryId === 'all' ? 'All expense categories' : categoryLookup.get(selectedCategoryId)?.name ?? 'Uncategorised'}
-            </p>
-            <dl className="mt-3 space-y-2 text-xs text-slate-300">
-              <div className="flex items-center justify-between">
-                <dt>Budget baseline</dt>
-                <dd className="font-semibold text-warning">{formatCurrency(totalsForSelected.budgetTotal)}</dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt>Planned items ({totalsForSelected.plannedItems.length})</dt>
-                <dd className="font-semibold text-slate-200">{formatCurrency(totalsForSelected.plannedFromItems)}</dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt>Actual spend ({totalsForSelected.actualEntries.length})</dt>
-                <dd className="font-semibold text-danger">{formatCurrency(totalsForSelected.actualTotal)}</dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt>Variance</dt>
-                <dd className={`font-semibold ${totalsForSelected.totalPlanned - totalsForSelected.actualTotal >= 0 ? 'text-success' : 'text-danger'}`}>
-                  {formatCurrency(totalsForSelected.totalPlanned - totalsForSelected.actualTotal)}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        </div>
-
-      </section>
-
-      <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
-        <div className="space-y-6">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
-                <span className="rounded-full border border-slate-700/70 bg-slate-950/80 px-3 py-1 font-semibold text-accent">
-                  Navigator
-                </span>
-                <span className="rounded-full border border-slate-800/70 bg-slate-950/60 px-3 py-1 text-slate-400">
-                  High density view
-                </span>
-              </div>
-              <h3 className="text-xl font-semibold text-slate-100 sm:text-2xl">Planned Expense Navigator</h3>
-              <p className="max-w-2xl text-xs text-slate-400 sm:text-sm">
-                Drill into categories, spot overspending, and update plans without leaving this screen. Leverage the
-                quick filters and inline actions to keep your planned purchases on track.
-              </p>
-            </div>
-            <div className="grid w-full max-w-xl grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-              <div className="rounded-xl border border-slate-800/80 bg-slate-950/80 p-3 text-left shadow-inner">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500">Total planned</p>
-                <p className="mt-1 text-lg font-semibold text-warning">
-                  {formatCurrency(overallSummary.planned)}
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-800/80 bg-slate-950/80 p-3 text-left shadow-inner">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500">Spent</p>
-                <p className="mt-1 text-lg font-semibold text-slate-200">
-                  {formatCurrency(overallSummary.actual)}
-                </p>
-              </div>
-              <div
-                className={`rounded-xl border p-3 text-left shadow-inner ${
-                  overallSummary.variance >= 0
-                    ? 'border-success/40 bg-success/10'
-                    : 'border-danger/40 bg-danger/10'
-                }`}
-              >
-                {formatCurrency(overallSummary.variance)}
-              </p>
-            </div>
-            <span
-              className={`rounded-full px-2 py-0.5 font-semibold uppercase tracking-wide ${
-                spendingBadgeStyles[overallSummary.status].badgeClass
-              }`}
-            >
-              {spendingBadgeStyles[overallSummary.status].label}
-            </span>
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {navigatorViewOptions.map(({ key, label }) => {
-              const isActive = navigatorView === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setNavigatorView(key)}
-                  className={`rounded-full border px-3 py-1 font-semibold transition ${
-                    isActive
-                      ? 'border-accent bg-accent text-slate-900'
-                      : 'border-slate-700 text-slate-300 hover:border-accent hover:text-accent'
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {navigatorFilterOptions.map(({ key, label }) => {
-              const isActive = navigatorFilter === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setNavigatorFilter(key)}
-                  className={`rounded-full border px-3 py-1 font-semibold transition ${
-                    isActive
-                      ? 'border-accent bg-accent text-slate-900'
-                      : 'border-slate-700 text-slate-300 hover:border-accent hover:text-accent'
-                  }`}
-                >
-                  {formatCurrency(overallSummary.variance)}
-                </p>
-                <span
-                  className={`mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                    spendingBadgeStyles[overallSummary.status].badgeClass
-                  }`}
-                >
-                  {spendingBadgeStyles[overallSummary.status].label}
-                </span>
-              </div>
-              <div className="rounded-xl border border-slate-800/80 bg-slate-950/80 p-3 text-left shadow-inner">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500">Plan utilisation</p>
-                <p className="mt-1 text-lg font-semibold text-slate-200">{overallUtilisationPercent}%</p>
-                <div className="mt-2 h-2 rounded-full bg-slate-800">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-sky-400 via-accent to-warning"
-                    style={{ width: `${overallUtilisationWidth}%` }}
-                  />
-                </div>
-                <p className="mt-1 text-[10px] text-slate-500">
-                  Spent {formatCurrency(overallSummary.actual)} of {formatCurrency(overallSummary.planned)}
-                </p>
-              </div>
-            </div>
-          </div>
-
-        <div className="rounded-xl border border-slate-800/60 bg-slate-950/50 p-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-[11px] uppercase tracking-wide text-slate-500">Quick filters</span>
-              {navigatorFilterOptions.map(({ key, label }) => {
-                const isActive = navigatorFilter === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setNavigatorFilter(key)}
-                    className={`rounded-full border px-3 py-1 font-semibold transition ${
-                      isActive
-                        ? 'border-accent bg-accent text-slate-900'
-                        : 'border-slate-700 text-slate-300 hover:border-accent hover:text-accent'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <div className="relative">
-                <input
-                  value={categorySearchTerm}
-                  onChange={(event) => setCategorySearchTerm(event.target.value)}
-                  className="w-56 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 pr-8 text-sm text-slate-200 placeholder:text-slate-500"
-                  placeholder="Search categories or items"
-                />
-                {categorySearchTerm && (
-                  <button
-                    type="button"
-                    onClick={() => setCategorySearchTerm('')}
-                    className="absolute inset-y-0 right-2 text-slate-500 transition hover:text-accent"
-                    aria-label="Clear search"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={expandAllCategories}
-                className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
-              >
-                Expand all
-              </button>
-              <button
-                type="button"
-                onClick={collapseAllCategories}
-                className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
-              >
-                Collapse all
-              </button>
-            </div>
-            {navigatorView === 'category' && (
+            {navigatorView === 'category' ? (
               <>
-                <button
-                  type="button"
-                  onClick={expandAllCategories}
-                  className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
-                >
-                  Expand all
-                </button>
-                <button
-                  type="button"
-                  onClick={collapseAllCategories}
-                  className="rounded-lg border border-slate-700 px-3 py-2 font-semibold text-slate-300 transition hover:border-accent hover:text-accent"
-                >
-                  Collapse all
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {overspendingCategories.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-danger/30 bg-danger/5 px-3 py-2 text-xs">
-            <span className="text-[11px] uppercase tracking-wide text-danger/80">Overspending hotspots</span>
-            {overspendingCategories.map(({ category, summary }) => (
-              <button
-                key={category.id}
-                type="button"
-                onClick={() => {
-                  setNavigatorFilter('over');
-                  setCategorySearchTerm('');
-                  focusCategory(category.id, true);
-                }}
-                className="inline-flex items-center gap-2 rounded-full border border-danger/50 bg-danger/10 px-3 py-1 font-semibold text-danger transition hover:border-danger/70"
-              >
-                {category.name}
-                <span className="text-[10px] font-semibold text-danger/80">
-                  {formatCurrency(Math.abs(summary.variance))}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(260px,1fr)]">
-          <div className="space-y-4">
-            {renderedCategorySections.length > 0 && (
-              <div className="overflow-hidden rounded-2xl border border-slate-800/70 bg-slate-950/40 shadow-inner">
-                <div className="overflow-x-auto">
-                  <div className="min-w-[980px] text-xs">
-                    <div className="grid grid-cols-[minmax(0,2.6fr)_minmax(110px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(220px,1fr)] items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                      <span className="text-left">Category / Item</span>
-                      <span>Due</span>
-                      <span className="text-right">Planned</span>
-                      <span className="text-right">Spent</span>
-                      <span className="text-right">Variance</span>
-                      <span className="text-right">Workflow</span>
+                {renderedCategorySections.length > 0 && (
+                  <div className="overflow-hidden rounded-2xl border border-slate-800/70 bg-slate-950/40 shadow-inner">
+                    <div className="overflow-x-auto">
+                      <div className="min-w-[980px] text-xs">
+                        <div className="grid grid-cols-[minmax(0,2.6fr)_minmax(110px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(120px,0.9fr)_minmax(220px,1fr)] items-center gap-4 border-b border-slate-800/80 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                          <span className="text-left">Category / Item</span>
+                          <span>Due</span>
+                          <span className="text-right">Planned</span>
+                          <span className="text-right">Spent</span>
+                          <span className="text-right">Variance</span>
+                          <span className="text-right">Workflow</span>
+                        </div>
+                        <div>{renderedCategorySections}</div>
+                      </div>
                     </div>
-                    <div>{renderedCategorySections}</div>
-                  </div>
-                </div>
-              </div>
-            )}
-            {visibleUncategorisedDetails.length > 0 && (
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h4 className="text-sm font-semibold text-slate-100">Uncategorised items</h4>
-                    <p className="text-[11px] text-slate-500">
-                      Assign a category so these expenses roll into the right budgets.
-                    </p>
                   </div>
                 )}
                 {visibleUncategorisedDetails.length > 0 && (
@@ -2350,7 +1884,6 @@ export function SmartBudgetingView() {
               </div>
             )}
           </aside>
-        </div>
         </div>
       </section>
     </div>
