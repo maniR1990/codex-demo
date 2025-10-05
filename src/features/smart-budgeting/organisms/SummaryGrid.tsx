@@ -6,11 +6,10 @@ import type { SmartBudgetingController } from '../hooks/useSmartBudgetingControl
 interface SummaryGridProps {
   overview: SmartBudgetingController['overview'];
   categories: SmartBudgetingController['categories'];
-  inspector: SmartBudgetingController['inspector'];
   utils: SmartBudgetingController['utils'];
 }
 
-export function SummaryGrid({ overview, categories, inspector, utils }: SummaryGridProps) {
+export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
   const {
     totalsForAll,
     overallSummary,
@@ -34,20 +33,8 @@ export function SummaryGrid({ overview, categories, inspector, utils }: SummaryG
     focusCategory
   } = categories;
 
-  const {
-    baselineLabel,
-    focusedCategory,
-    budgetDraft,
-    setBudgetDraft,
-    handleBudgetSubmit,
-    handleBudgetClear,
-    isSavingBudget,
-    budgetError,
-    budgetFeedback
-  } = inspector;
-
   return (
-    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <article className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -160,48 +147,6 @@ export function SummaryGrid({ overview, categories, inspector, utils }: SummaryG
         )}
       </article>
 
-      <article className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Baseline controls</p>
-        {focusedCategory ? (
-          <form onSubmit={handleBudgetSubmit} className="mt-3 space-y-3">
-            <div>
-              <p className="text-sm font-semibold text-slate-100">{focusedCategory.name}</p>
-              <p className="text-[11px] text-slate-500">{baselineLabel}</p>
-            </div>
-            <input
-              type="number"
-              min={0}
-              step="any"
-              value={budgetDraft}
-              onChange={(event) => setBudgetDraft(event.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 focus:border-accent focus:outline-none"
-              placeholder="0"
-            />
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="submit"
-                className="rounded-lg bg-success px-3 py-2 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
-                disabled={isSavingBudget}
-              >
-                {isSavingBudget ? 'Saving…' : 'Save baseline'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleBudgetClear()}
-                className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500"
-                disabled={isSavingBudget}
-              >
-                Clear
-              </button>
-            </div>
-            {budgetError && <p className="text-[10px] text-danger">{budgetError}</p>}
-            {budgetFeedback === 'saved' && <p className="text-[10px] text-success">Baseline saved.</p>}
-            {budgetFeedback === 'cleared' && <p className="text-[10px] text-slate-400">Baseline cleared for this category.</p>}
-          </form>
-        ) : (
-          <p className="mt-3 text-xs text-slate-500">Select a category in the navigator to set a spending baseline.</p>
-        )}
-      </article>
     </section>
   );
 }
