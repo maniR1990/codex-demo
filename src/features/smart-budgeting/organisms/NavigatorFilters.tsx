@@ -6,8 +6,6 @@ interface NavigatorFiltersProps {
   categories: SmartBudgetingController['categories'];
   table: SmartBudgetingController['table'];
   onOpenDialog: () => void;
-  onExpandAll: () => void;
-  onCollapseAll: () => void;
 }
 
 const statusIcons: Record<'all' | 'over' | 'under' | 'not-spent', JSX.Element> = {
@@ -98,7 +96,7 @@ const resetIcon = (
   </svg>
 );
 
-export function NavigatorFilters({ categories, table, onOpenDialog, onExpandAll, onCollapseAll }: NavigatorFiltersProps) {
+export function NavigatorFilters({ categories, table, onOpenDialog }: NavigatorFiltersProps) {
   const {
     navigatorFilter,
     setNavigatorFilter,
@@ -192,44 +190,6 @@ export function NavigatorFilters({ categories, table, onOpenDialog, onExpandAll,
             className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-accent/90"
           >
             + Plan expenses
-          </button>
-          <button
-            type="button"
-            onClick={onExpandAll}
-            aria-label="Expand all"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-slate-500 hover:text-accent"
-          >
-            <svg
-              aria-hidden="true"
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={onCollapseAll}
-            aria-label="Collapse all"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-slate-500 hover:text-accent"
-          >
-            <svg
-              aria-hidden="true"
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M5 12h14" />
-            </svg>
           </button>
           <details className="relative">
             <summary
