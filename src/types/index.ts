@@ -65,6 +65,24 @@ export interface PlannedExpenseItem extends Timestamped {
   notes?: string;
 }
 
+export interface BudgetMonthTotals {
+  planned: number;
+  actual: number;
+  recurring: number;
+  rollover: number;
+  unassignedActuals: number;
+  variance: number;
+}
+
+export interface BudgetMonth extends Timestamped {
+  month: string;
+  plannedExpenses: PlannedExpenseItem[];
+  recurringAllocations: RecurringExpense[];
+  rollovers: PlannedExpenseItem[];
+  unassignedActuals: Transaction[];
+  totals: BudgetMonthTotals;
+}
+
 export interface RecurringExpense extends Timestamped {
   id: string;
   name: string;

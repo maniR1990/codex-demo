@@ -332,6 +332,28 @@ export function mergeSnapshots(local: FinancialSnapshot, remote: FinancialSnapsh
     return local.profile.updatedAt >= remote.profile.updatedAt ? local.profile : remote.profile;
   })();
 
+  const mergeBudgetMonths = (
+    lhs: Record<string, BudgetMonth>,
+    rhs: Record<string, BudgetMonth>
+  ): Record<string, BudgetMonth> => {
+    const keys = new Set([...Object.keys(lhs), ...Object.keys(rhs)]);
+    const merged: Record<string, BudgetMonth> = {};
+    for (const key of keys) {
+      const left = lhs[key];
+      const right = rhs[key];
+      if (!left) {
+        merged[key] = right;
+        continue;
+      }
+      if (!right) {
+        merged[key] = left;
+        continue;
+      }
+      merged[key] = left.updatedAt >= right.updatedAt ? left : right;
+    }
+    return merged;
+  };
+
   return normaliseSnapshot({
     profile: profile ? { ...profile, currency: profile.currency ?? baseCurrency } : null,
     accounts: mergeCollections(local.accounts, remote.accounts),
