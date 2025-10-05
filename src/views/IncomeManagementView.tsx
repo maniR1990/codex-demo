@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { useFinancialStore } from '../store/FinancialStoreProvider';
 import type { BudgetAdjustment, Category, PlannedExpenseItem, Transaction } from '../types';
+import { interpretCategoryJson, normaliseCategoryName } from '../utils/categoryImport';
 
 const categoryTypes: Category['type'][] = ['income', 'expense', 'asset', 'liability'];
 
@@ -26,6 +27,13 @@ interface CategorySummary {
   transactions: Transaction[];
   plannedItems: PlannedExpenseItem[];
   rolloverTotal: number;
+}
+
+interface CategoryImportSummary {
+  created: number;
+  skipped: string[];
+  warnings: string[];
+  errors: string[];
 }
 
 function createBlankDraft(type: Category['type'] = 'income'): CategoryDraftForm {
@@ -351,6 +359,9 @@ export function IncomeManagementView() {
   const [activeSection, setActiveSection] = useState<'income' | 'category'>('income');
   const [isCreatePanelOpen, setIsCreatePanelOpen] = useState(false);
   const [categoryDrafts, setCategoryDrafts] = useState<CategoryDraftForm[]>([]);
+  const [importJson, setImportJson] = useState('');
+  const [isImportingCategories, setIsImportingCategories] = useState(false);
+  const [importSummary, setImportSummary] = useState<CategoryImportSummary | null>(null);
 
   const toggleNode = (id: string) => {
     setExpandedNodes((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -387,6 +398,115 @@ export function IncomeManagementView() {
 
   const removeDraftRow = (id: string) => {
     setCategoryDrafts((prev) => prev.filter((draft) => draft.id !== id));
+  };
+
+  const resetImportState = () => {
+    setImportJson('');
+    setImportSummary(null);
+  };
+
+  const handleImportCategories = async () => {
+    setImportSummary(null);
+    if (!importJson.trim()) {
+      setImportSummary({
+        created: 0,
+        skipped: [],
+        warnings: [],
+        errors: ['Please paste category JSON before importing.']
+      });
+      return;
+    }
+
+    setIsImportingCategories(true);
+    try {
+      const { entries, warnings: parseWarnings, errors: parseErrors } = interpretCategoryJson(importJson);
+      if (parseErrors.length > 0) {
+        setImportSummary({ created: 0, skipped: [], warnings: [], errors: parseErrors });
+        return;
+      }
+
+      if (entries.length === 0) {
+        setImportSummary({ created: 0, skipped: [], warnings: parseWarnings, errors: [] });
+        return;
+      }
+
+      const existingByName = new Map<string, string>();
+      categories.forEach((category) => {
+        existingByName.set(normaliseCategoryName(category.name), category.id);
+      });
+
+      const createdByName = new Map<string, string>();
+      const skippedNames = new Map<string, string>();
+      const warnings = [...parseWarnings];
+      const errors: string[] = [];
+      let createdCount = 0;
+
+      let remaining = entries.slice();
+      let safetyCounter = 0;
+
+      while (remaining.length > 0 && safetyCounter < entries.length * 2) {
+        const nextRound: typeof remaining = [];
+        let progressInPass = 0;
+
+        for (const entry of remaining) {
+          const key = normaliseCategoryName(entry.name);
+          if (existingByName.has(key) || createdByName.has(key)) {
+            if (!skippedNames.has(key)) {
+              skippedNames.set(key, entry.name);
+              warnings.push(`Category "${entry.name}" already exists and was skipped.`);
+            }
+            continue;
+          }
+
+          let parentId: string | undefined;
+          if (entry.parentName) {
+            const parentKey = normaliseCategoryName(entry.parentName);
+            parentId = createdByName.get(parentKey) ?? existingByName.get(parentKey);
+            if (!parentId) {
+              nextRound.push(entry);
+              continue;
+            }
+          }
+
+          try {
+            const category = await addCategory({
+              name: entry.name,
+              type: entry.type,
+              parentId,
+              tags: entry.tags,
+              isCustom: true
+            });
+            createdByName.set(key, category.id);
+            existingByName.set(key, category.id);
+            createdCount += 1;
+            progressInPass += 1;
+          } catch (error) {
+            errors.push(`Failed to import "${entry.name}": ${(error as Error).message}`);
+          }
+        }
+
+        if (nextRound.length === remaining.length && progressInPass === 0) {
+          nextRound.forEach((entry) => {
+            errors.push(
+              `Skipped "${entry.name}" because parent "${entry.parentName ?? 'root'}" could not be resolved.`
+            );
+          });
+          break;
+        }
+
+        remaining = nextRound;
+        safetyCounter += 1;
+      }
+
+      setImportSummary({
+        created: createdCount,
+        skipped: Array.from(skippedNames.values()),
+        warnings,
+        errors
+      });
+    } finally {
+      setIsImportingCategories(false);
+    }
   };
 
   const handleIncomeSubmit = async (event: FormEvent) => {
@@ -1276,6 +1396,79 @@ export function IncomeManagementView() {
                 </button>
               </div>
             </form>
+          )}
+        </div>
+
+        <div className="mt-6 space-y-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h4 className="text-sm font-semibold text-slate-200">Bootstrap categories from JSON</h4>
+              <p className="text-xs text-slate-500">
+                Paste a nested JSON structure to seed default categories. Invalid or incomplete entries are
+                automatically skipped.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleImportCategories}
+                className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-slate-900 hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isImportingCategories}
+              >
+                {isImportingCategories ? 'Importing…' : 'Import categories'}
+              </button>
+              <button
+                type="button"
+                onClick={resetImportState}
+                className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-200 hover:border-slate-500"
+                disabled={isImportingCategories || (!importJson.trim() && !importSummary)}
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+          <textarea
+            className="h-48 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-300"
+            value={importJson}
+            onChange={(event) => setImportJson(event.target.value)}
+            placeholder="{\n  \"Household Essentials\": {\n    \"category\": \"Groceries & Daily Supplies\",\n    \"subcategories\": [\n      \"Grocery\",\n      \"Meat\"\n    ]\n  }\n}"
+          />
+          {importSummary && (
+            <div className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-300">
+              <p className="font-semibold text-slate-200">
+                Created {importSummary.created} categor{importSummary.created === 1 ? 'y' : 'ies'}.
+              </p>
+              {importSummary.skipped.length > 0 && (
+                <div>
+                  <p className="font-semibold text-slate-200">Skipped</p>
+                  <ul className="ml-4 list-disc space-y-1 text-[11px] text-slate-400">
+                    {importSummary.skipped.map((name) => (
+                      <li key={`skipped-${name}`}>{name}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {importSummary.warnings.length > 0 && (
+                <div>
+                  <p className="font-semibold text-warning">Warnings</p>
+                  <ul className="ml-4 list-disc space-y-1 text-[11px] text-warning/90">
+                    {importSummary.warnings.map((warning, index) => (
+                      <li key={`warning-${index}`}>{warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {importSummary.errors.length > 0 && (
+                <div>
+                  <p className="font-semibold text-danger">Errors</p>
+                  <ul className="ml-4 list-disc space-y-1 text-[11px] text-danger/90">
+                    {importSummary.errors.map((error, index) => (
+                      <li key={`error-${index}`}>{error}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
