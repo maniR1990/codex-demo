@@ -67,6 +67,7 @@ export function SmartBudgetingView() {
     transactions,
     addPlannedExpense,
     updatePlannedExpense,
+    updateCategory,
     deletePlannedExpense,
     addCategory
   } = useFinancialStore();
@@ -362,6 +363,9 @@ export function SmartBudgetingView() {
   const [categorySearchTerm, setCategorySearchTerm] = useState('');
   const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
   const [budgetDraft, setBudgetDraft] = useState('');
+  const [isSavingBudget, setIsSavingBudget] = useState(false);
+  const [budgetError, setBudgetError] = useState<string | null>(null);
+  const [budgetFeedback, setBudgetFeedback] = useState<'saved' | 'cleared' | null>(null);
   const navigatorFilterOptions: Array<{ key: 'all' | PlannedExpenseSpendingHealth; label: string }> = [
     { key: 'all', label: 'All statuses' },
     { key: 'over', label: 'Overspending' },
@@ -385,6 +389,11 @@ export function SmartBudgetingView() {
       return next;
     });
   }, [expenseCategories]);
+
+  useEffect(() => {
+    setBudgetError(null);
+    setBudgetFeedback(null);
+  }, [focusedCategoryId, viewMode]);
 
   const plannedExpenseDetails = useMemo<PlannedExpenseDetail[]>(() => {
     return periodPlannedExpenses
@@ -665,7 +674,8 @@ export function SmartBudgetingView() {
     });
     return list.sort((a, b) => a.summary.variance - b.summary.variance).slice(0, 3);
   }, [expenseCategories, categorySummaries]);
-  const inspectorCategory = focusedCategoryId ? categoryLookup.get(focusedCategoryId) : undefined;
+  const focusedCategory = focusedCategoryId ? categoryLookup.get(focusedCategoryId) ?? null : null;
+  const inspectorCategory = focusedCategory ?? undefined;
   const inspectorDetails = useMemo(() => {
     if (!focusedCategoryId) {
       return [] as PlannedExpenseDetail[];
@@ -865,6 +875,89 @@ export function SmartBudgetingView() {
       return next;
     });
   }
+
+  const handleSummaryScopeChange = (value: 'all' | string) => {
+    setSelectedCategoryId(value);
+    if (value !== 'all') {
+      focusCategory(value, true);
+    }
+  };
+
+  const handleMonthInputChange = (value: string) => {
+    if (!value) {
+      setSelectedMonth(defaultMonth);
+      return;
+    }
+    setSelectedMonth(value);
+  };
+
+  const handleYearInputChange = (value: string) => {
+    if (!value) {
+      setSelectedYear(defaultYear);
+      return;
+    }
+    const sanitised = value.replace(/[^0-9]/g, '').slice(0, 4);
+    setSelectedYear(sanitised || defaultYear);
+  };
+
+  const handleResetFilters = () => {
+    setNavigatorFilter('all');
+    setNavigatorView('category');
+    setCategorySearchTerm('');
+    setSelectedCategoryId('all');
+  };
+
+  const handleBudgetDraftChange = (value: string) => {
+    setBudgetDraft(value);
+    setBudgetError(null);
+    setBudgetFeedback(null);
+  };
+
+  const applyBudgetDraft = async (rawValue: string) => {
+    if (isSavingBudget) {
+      return;
+    }
+    if (!focusedCategory) {
+      setBudgetError('Choose a category in the navigator to set a baseline budget.');
+      return;
+    }
+    const trimmed = rawValue.trim();
+    const budgetKey = viewMode === 'monthly' ? 'monthly' : 'yearly';
+    const nextBudgets: Category['budgets'] = { ...(focusedCategory.budgets ?? {}) };
+    if (trimmed === '') {
+      delete nextBudgets[budgetKey];
+    } else {
+      const numericValue = Number(trimmed);
+      if (Number.isNaN(numericValue) || numericValue < 0) {
+        setBudgetError('Enter a valid amount to save.');
+        return;
+      }
+      nextBudgets[budgetKey] = numericValue;
+    }
+    setIsSavingBudget(true);
+    setBudgetError(null);
+    setBudgetFeedback(null);
+    try {
+      await updateCategory(focusedCategory.id, { budgets: nextBudgets });
+      setBudgetFeedback(trimmed === '' ? 'cleared' : 'saved');
+    } finally {
+      setIsSavingBudget(false);
+    }
+  };
+
+  const handleBudgetSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await applyBudgetDraft(budgetDraft);
+  };
+
+  const handleBudgetClear = async () => {
+    if (!focusedCategory) {
+      setBudgetError('Choose a category in the navigator to set a baseline budget.');
+      return;
+    }
+    setBudgetDraft('');
+    await applyBudgetDraft('');
+  };
 
   const handleStartEdit = (detail: PlannedExpenseDetail) => {
     setEditingItemId(detail.item.id);
@@ -1423,6 +1516,22 @@ export function SmartBudgetingView() {
   const renderedCategorySections = expenseCategoryTree
     .map((category) => renderCategorySection(category))
     .filter((section): section is JSX.Element => section !== null);
+  const summaryPeriodLabel = viewMode === 'monthly' ? 'Monthly' : 'Yearly';
+  const summaryPeriodDescriptor = viewMode === 'monthly' ? 'month' : 'year';
+  const overallStatusToken = spendingBadgeStyles[overallSummary.status];
+  const selectedCategoryLabel =
+    selectedCategoryId === 'all'
+      ? 'All categories'
+      : categoryLookup.get(selectedCategoryId)?.name ?? 'All categories';
+  const selectedCategoryVariance = totalsForSelected.totalPlanned - totalsForSelected.actualTotal;
+  const selectedCategoryStatus: PlannedExpenseSpendingHealth =
+    totalsForSelected.actualTotal === 0
+      ? 'not-spent'
+      : selectedCategoryVariance >= 0
+      ? 'under'
+      : 'over';
+  const selectedStatusToken = spendingBadgeStyles[selectedCategoryStatus];
+  const baselineLabel = viewMode === 'monthly' ? 'Monthly baseline (₹)' : 'Yearly baseline (₹)';
   const hasNavigatorResults = renderedCategorySections.length > 0 || visibleUncategorisedDetails.length > 0;
   return (
     <div className="space-y-6">
@@ -1660,7 +1769,341 @@ export function SmartBudgetingView() {
       </header>
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-6">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="inline-flex rounded-lg border border-slate-700 bg-slate-950/70 p-1 text-xs font-semibold text-slate-300">
+                  <button
+                    type="button"
+                    onClick={() => handleViewModeChange('monthly')}
+                    className={`rounded-md px-3 py-1 transition ${
+                      viewMode === 'monthly'
+                        ? 'bg-accent text-slate-900'
+                        : 'hover:bg-slate-800 hover:text-slate-100'
+                    }`}
+                  >
+                    Monthly
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleViewModeChange('yearly')}
+                    className={`rounded-md px-3 py-1 transition ${
+                      viewMode === 'yearly'
+                        ? 'bg-accent text-slate-900'
+                        : 'hover:bg-slate-800 hover:text-slate-100'
+                    }`}
+                  >
+                    Yearly
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-200">
+                  <button
+                    type="button"
+                    onClick={goToPreviousPeriod}
+                    className="rounded-md border border-slate-700 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-accent"
+                    aria-label="Previous period"
+                  >
+                    ‹
+                  </button>
+                  <span className="text-sm font-semibold text-slate-100">{periodLabel}</span>
+                  <button
+                    type="button"
+                    onClick={goToNextPeriod}
+                    className="rounded-md border border-slate-700 px-2 py-1 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-accent"
+                    aria-label="Next period"
+                  >
+                    ›
+                  </button>
+                </div>
+                {viewMode === 'monthly' ? (
+                  <input
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(event) => handleMonthInputChange(event.target.value)}
+                    className="rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 focus:border-accent focus:outline-none"
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={4}
+                    value={selectedYear}
+                    onChange={(event) => handleYearInputChange(event.target.value)}
+                    className="w-24 rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 focus:border-accent focus:outline-none"
+                  />
+                )}
+              </div>
+              <p className="text-xs text-slate-500">
+                Track planned versus actual spending for this {summaryPeriodDescriptor} and fine-tune category guardrails.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleOpenDialog}
+                className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-accent/90"
+              >
+                + Plan expenses
+              </button>
+              <button
+                type="button"
+                onClick={expandAllCategories}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500"
+              >
+                Expand all
+              </button>
+              <button
+                type="button"
+                onClick={collapseAllCategories}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500"
+              >
+                Collapse all
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{summaryPeriodLabel} overview</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-100">{periodLabel}</p>
+                  <p className="mt-2 text-xs text-slate-400">
+                    Planned {formatCurrency(totalsForAll.totalPlanned)} · Spent {formatCurrency(totalsForAll.actualTotal)}
+                  </p>
+                </div>
+                <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${overallStatusToken.badgeClass}`}>
+                  {overallStatusToken.label}
+                </span>
+              </div>
+              <dl className="mt-4 grid grid-cols-3 gap-3 text-[11px] text-slate-400">
+                <div>
+                  <dt className="uppercase tracking-wide">Planned</dt>
+                  <dd className="mt-1 text-sm font-semibold text-warning">{formatCurrency(totalsForAll.plannedFromItems)}</dd>
+                </div>
+                <div>
+                  <dt className="uppercase tracking-wide">Budgets</dt>
+                  <dd className="mt-1 text-sm font-semibold text-slate-200">{formatCurrency(totalsForAll.budgetTotal)}</dd>
+                </div>
+                <div>
+                  <dt className="uppercase tracking-wide">Actual</dt>
+                  <dd className="mt-1 text-sm font-semibold text-slate-100">{formatCurrency(totalsForAll.actualTotal)}</dd>
+                </div>
+              </dl>
+              <div className="mt-4">
+                <div className="flex items-center justify-between text-[10px] text-slate-500">
+                  <span>Utilisation</span>
+                  <span>{overallUtilisationPercent}%</span>
+                </div>
+                <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div className="h-full rounded-full bg-accent" style={{ width: `${overallUtilisationWidth}%` }} />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Summary scope</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-100">{selectedCategoryLabel}</p>
+                  <p className="mt-2 text-xs text-slate-400">
+                    Planned {formatCurrency(totalsForSelected.totalPlanned)} · Spent {formatCurrency(totalsForSelected.actualTotal)}
+                  </p>
+                </div>
+                <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${selectedStatusToken.badgeClass}`}>
+                  {selectedStatusToken.label}
+                </span>
+              </div>
+              <dl className="mt-4 grid grid-cols-3 gap-3 text-[11px] text-slate-400">
+                <div>
+                  <dt className="uppercase tracking-wide">Planned</dt>
+                  <dd className="mt-1 text-sm font-semibold text-warning">{formatCurrency(totalsForSelected.plannedFromItems)}</dd>
+                </div>
+                <div>
+                  <dt className="uppercase tracking-wide">Budgets</dt>
+                  <dd className="mt-1 text-sm font-semibold text-slate-200">{formatCurrency(totalsForSelected.budgetTotal)}</dd>
+                </div>
+                <div>
+                  <dt className="uppercase tracking-wide">Variance</dt>
+                  <dd className={`mt-1 text-sm font-semibold ${selectedCategoryVariance >= 0 ? 'text-success' : 'text-danger'}`}>
+                    {formatCurrency(selectedCategoryVariance)}
+                  </dd>
+                </div>
+              </dl>
+              {selectedCategoryId !== 'all' && (
+                <button
+                  type="button"
+                  onClick={() => focusCategory(selectedCategoryId, true)}
+                  className="mt-4 text-[11px] font-semibold text-accent hover:text-accent/80"
+                >
+                  Focus in navigator
+                </button>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Overspending hotspots</p>
+              {overspendingCategories.length > 0 ? (
+                <ul className="mt-3 space-y-2 text-xs">
+                  {overspendingCategories.map(({ category, summary }) => (
+                    <li key={category.id} className="rounded-lg border border-danger/40 bg-danger/5 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-slate-100">{category.name}</span>
+                        <span className="font-semibold text-danger">{formatCurrency(summary.variance)}</span>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-danger/80">
+                        <span>
+                          Spent {formatCurrency(summary.actual)} of {formatCurrency(summary.planned)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            focusCategory(category.id, true);
+                            setSelectedCategoryId(category.id);
+                          }}
+                          className="font-semibold text-danger hover:underline"
+                        >
+                          Inspect
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-xs text-slate-500">No overspending recorded in this period.</p>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Baseline controls</p>
+              {focusedCategory ? (
+                <form onSubmit={handleBudgetSubmit} className="mt-3 space-y-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-100">{focusedCategory.name}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {baselineLabel}
+                    </p>
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={budgetDraft}
+                    onChange={(event) => handleBudgetDraftChange(event.target.value)}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 focus:border-accent focus:outline-none"
+                    placeholder="0"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-success px-3 py-2 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
+                      disabled={isSavingBudget}
+                    >
+                      {isSavingBudget ? 'Saving…' : 'Save baseline'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleBudgetClear()}
+                      className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500"
+                      disabled={isSavingBudget}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {budgetError && <p className="text-[10px] text-danger">{budgetError}</p>}
+                  {budgetFeedback === 'saved' && <p className="text-[10px] text-success">Baseline saved.</p>}
+                  {budgetFeedback === 'cleared' && <p className="text-[10px] text-slate-400">Baseline cleared for this category.</p>}
+                </form>
+              ) : (
+                <p className="mt-3 text-xs text-slate-500">Select a category in the navigator to set a spending baseline.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400" htmlFor="budgeting-summary-scope">
+                Summary scope
+              </label>
+              <select
+                id="budgeting-summary-scope"
+                value={selectedCategoryId}
+                onChange={(event) => handleSummaryScopeChange(event.target.value as 'all' | string)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 focus:border-accent focus:outline-none"
+              >
+                <option value="all">All categories</option>
+                {categoryOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Navigator filter</span>
+              <div className="flex flex-wrap gap-2">
+                {navigatorFilterOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setNavigatorFilter(option.key)}
+                    className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                      navigatorFilter === option.key
+                        ? 'bg-accent text-slate-900'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Navigator view</span>
+              <div className="flex flex-wrap gap-2">
+                {navigatorViewOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setNavigatorView(option.key)}
+                    className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                      navigatorView === option.key
+                        ? 'bg-accent text-slate-900'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400" htmlFor="budgeting-search">
+                Search
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  id="budgeting-search"
+                  type="search"
+                  placeholder="Search categories or items"
+                  value={categorySearchTerm}
+                  onChange={(event) => setCategorySearchTerm(event.target.value)}
+                  className="min-w-[200px] flex-1 rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 focus:border-accent focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-4">
             {navigatorView === 'category' ? (
               <>
@@ -1885,6 +2328,7 @@ export function SmartBudgetingView() {
             )}
           </aside>
         </div>
+      </div>
       </section>
     </div>
   );
