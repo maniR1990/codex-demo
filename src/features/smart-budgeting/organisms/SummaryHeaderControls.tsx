@@ -1,5 +1,4 @@
 import { useId, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import type { SmartBudgetingController } from '../hooks/useSmartBudgetingController';
 
 interface SummaryHeaderControlsProps {
@@ -23,11 +22,6 @@ export function SummaryHeaderControls({ period }: SummaryHeaderControlsProps) {
   const yearInputId = useId();
   const monthInputRef = useRef<HTMLInputElement>(null);
   const yearInputRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
-
-  const handleOpenSettings = () => {
-    navigate('/income');
-  };
 
   const openMonthPicker = () => {
     if (viewMode !== 'monthly') {
@@ -91,27 +85,6 @@ export function SummaryHeaderControls({ period }: SummaryHeaderControlsProps) {
             }`}
           >
             Yearly
-          </button>
-          <button
-            type="button"
-            onClick={handleOpenSettings}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700/70 bg-slate-900/40 text-slate-200 transition hover:border-slate-500 hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
-            aria-label="Manage income and categories"
-          >
-            <svg
-              aria-hidden="true"
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.09A1.65 1.65 0 0 0 10 4.6V4a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.09a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
-            </svg>
-            <span className="sr-only">Manage income and categories</span>
           </button>
         </div>
       </div>
