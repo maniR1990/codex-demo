@@ -25,6 +25,7 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
   const {
     selectedCategoryLabel,
     totalsForSelected,
+    selectedCategoryStatus,
     selectedStatusToken,
     selectedCategoryVariance,
     handleSummaryScopeChange,
@@ -98,9 +99,11 @@ export function SummaryGrid({ overview, categories, utils }: SummaryGridProps) {
               Planned {utils.formatCurrency(totalsForSelected.totalPlanned)} · Spent {utils.formatCurrency(totalsForSelected.actualTotal)}
             </p>
           </div>
-          <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${selectedStatusToken.badgeClass}`}>
-            {selectedStatusToken.label}
-          </span>
+          {selectedCategoryStatus !== 'not-spent' && (
+            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${selectedStatusToken.badgeClass}`}>
+              {selectedStatusToken.label}
+            </span>
+          )}
         </div>
         <dl className="mt-4 grid grid-cols-3 gap-3 text-[11px] text-slate-400">
           <SummaryStat label="Planned" value={<span className="text-warning">{utils.formatCurrency(totalsForSelected.plannedFromItems)}</span>} />
