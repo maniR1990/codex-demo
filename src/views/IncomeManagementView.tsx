@@ -14,22 +14,17 @@ interface CategoryNode {
   children: CategoryNode[];
 }
 
-interface CategorySummary {
-  totalSpent: number;
-  totalIncome: number;
-  plannedTotal: number;
-  transactions: Transaction[];
-  plannedItems: PlannedExpenseItem[];
-}
-
 interface CategoryDraftForm {
   id: string;
   name: string;
   type: Category['type'];
   parentId: string;
   tags: string;
-  monthlyBudget: string;
-  yearlyBudget: string;
+}
+
+interface CategorySummary {
+  transactions: Transaction[];
+  plannedItems: PlannedExpenseItem[];
 }
 
 function createBlankDraft(type: Category['type'] = 'income'): CategoryDraftForm {
@@ -38,9 +33,7 @@ function createBlankDraft(type: Category['type'] = 'income'): CategoryDraftForm 
     name: '',
     type,
     parentId: '',
-    tags: '',
-    monthlyBudget: '',
-    yearlyBudget: ''
+    tags: ''
   };
 }
 
@@ -215,9 +208,7 @@ export function IncomeManagementView() {
     name: '',
     type: 'income' as Category['type'],
     parentId: '',
-    tags: '',
-    monthlyBudget: '',
-    yearlyBudget: ''
+    tags: ''
   });
 
   const categoryTrees = useMemo(() => buildCategoryTree(categories), [categories]);
@@ -232,17 +223,6 @@ export function IncomeManagementView() {
 
   const descendantMap = useMemo(() => buildDescendantMap(categoryTrees), [categoryTrees]);
   const categoryLookup = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
-
-  const categoryBudgetMap = useMemo(() => {
-    const map = new Map<string, number>();
-    categories.forEach((category) => {
-      const budget = categoryViewMode === 'monthly' ? category.budgets?.monthly : category.budgets?.yearly;
-      if (typeof budget === 'number') {
-        map.set(category.id, budget);
-      }
-    });
-    return map;
-  }, [categories, categoryViewMode]);
 
   const relevantTransactions = useMemo(
     () =>
@@ -289,9 +269,6 @@ export function IncomeManagementView() {
     () =>
       (node: CategoryNode): CategorySummary => {
         const queue: CategoryNode[] = [node];
-        let totalSpent = 0;
-        let totalIncome = 0;
-        let plannedTotal = 0;
         const transactionsList: Transaction[] = [];
         const plannedList: PlannedExpenseItem[] = [];
 
@@ -299,24 +276,13 @@ export function IncomeManagementView() {
           const current = queue.shift()!;
           const txns = transactionMap.get(current.category.id) ?? [];
           txns.forEach((txn) => {
-            if (txn.amount < 0) {
-              totalSpent += Math.abs(txn.amount);
-            } else {
-              totalIncome += txn.amount;
-            }
             transactionsList.push(txn);
           });
 
           const plannedItems = plannedMap.get(current.category.id) ?? [];
           plannedItems.forEach((item) => {
-            plannedTotal += item.plannedAmount;
             plannedList.push(item);
           });
-
-          const budget = categoryBudgetMap.get(current.category.id);
-          if (typeof budget === 'number') {
-            plannedTotal += budget;
-          }
 
           queue.push(...current.children);
         }
@@ -337,14 +303,11 @@ export function IncomeManagementView() {
         });
 
         return {
-          totalSpent,
-          totalIncome,
-          plannedTotal,
           transactions: transactionsList,
           plannedItems: plannedList
         };
       },
-    [transactionMap, plannedMap, categoryBudgetMap]
+    [transactionMap, plannedMap]
   );
 
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
@@ -439,21 +402,12 @@ export function IncomeManagementView() {
         .split(',')
         .map((tag) => tag.trim().toLowerCase())
         .filter((tag, index, array) => tag.length > 0 && array.indexOf(tag) === index);
-      const monthlyBudget = draft.monthlyBudget.trim() ? Number(draft.monthlyBudget) : undefined;
-      const yearlyBudget = draft.yearlyBudget.trim() ? Number(draft.yearlyBudget) : undefined;
 
       const category = await addCategory({
         name: draft.name,
         type: draft.type,
         parentId: draft.parentId || undefined,
         tags,
-        budgets:
-          monthlyBudget !== undefined || yearlyBudget !== undefined
-            ? {
-                ...(monthlyBudget !== undefined ? { monthly: monthlyBudget } : {}),
-                ...(yearlyBudget !== undefined ? { yearly: yearlyBudget } : {})
-              }
-            : undefined,
         isCustom: true
       });
 
@@ -479,9 +433,7 @@ export function IncomeManagementView() {
       name: category.name,
       type: category.type,
       parentId: category.parentId ?? '',
-      tags: category.tags.join(', '),
-      monthlyBudget: category.budgets?.monthly !== undefined ? String(category.budgets.monthly) : '',
-      yearlyBudget: category.budgets?.yearly !== undefined ? String(category.budgets.yearly) : ''
+      tags: category.tags.join(', ')
     });
   };
 
@@ -492,22 +444,11 @@ export function IncomeManagementView() {
       .split(',')
       .map((tag) => tag.trim().toLowerCase())
       .filter((tag, index, array) => tag.length > 0 && array.indexOf(tag) === index);
-    const monthlyBudget = editingCategoryState.monthlyBudget.trim()
-      ? Number(editingCategoryState.monthlyBudget)
-      : undefined;
-    const yearlyBudget = editingCategoryState.yearlyBudget.trim() ? Number(editingCategoryState.yearlyBudget) : undefined;
     await updateCategory(editingCategoryId, {
       name: editingCategoryState.name,
       type: editingCategoryState.type,
       parentId: editingCategoryState.parentId || undefined,
-      tags,
-      budgets:
-        monthlyBudget !== undefined || yearlyBudget !== undefined
-          ? {
-              ...(monthlyBudget !== undefined ? { monthly: monthlyBudget } : {}),
-              ...(yearlyBudget !== undefined ? { yearly: yearlyBudget } : {})
-            }
-          : undefined
+      tags
     });
     setEditingCategoryId(null);
   };
@@ -529,8 +470,9 @@ export function IncomeManagementView() {
       const hasTransactions = summary.transactions.length > 0;
       const hasPlans = summary.plannedItems.length > 0;
       const canExpand = hasChildren || hasTransactions || hasPlans;
-      const variance = summary.plannedTotal - summary.totalSpent;
-      const nodeBudget = categoryBudgetMap.get(node.category.id);
+      const parentLabel = node.category.parentId
+        ? categoryLookup.get(node.category.parentId)?.name ?? 'Unknown parent'
+        : 'No parent';
       const invalidParents = descendantMap.get(node.category.id) ?? new Set<string>([node.category.id]);
       const editParentOptions = categories.filter(
         (category) =>
@@ -561,17 +503,7 @@ export function IncomeManagementView() {
               </div>
             </div>
           </td>
-          <td className="px-4 py-3 text-sm text-slate-300">
-            {typeof nodeBudget === 'number' ? formatCurrency(nodeBudget) : <span className="text-slate-600">—</span>}
-          </td>
-          <td className="px-4 py-3 text-sm text-warning">{formatCurrency(summary.plannedTotal)}</td>
-          <td className="px-4 py-3 text-sm text-danger">{formatCurrency(summary.totalSpent)}</td>
-          <td className="px-4 py-3 text-sm text-success">{formatCurrency(summary.totalIncome)}</td>
-          <td className="px-4 py-3 text-sm">
-            <span className={variance >= 0 ? 'text-success font-semibold' : 'text-danger font-semibold'}>
-              {formatCurrency(variance)}
-            </span>
-          </td>
+          <td className="px-4 py-3 text-sm text-slate-300">{parentLabel}</td>
           <td className="px-4 py-3 text-sm text-slate-300">
             {node.category.tags.length > 0 ? (
               <div className="flex flex-wrap gap-1">
@@ -608,7 +540,7 @@ export function IncomeManagementView() {
 
       const detailRow = isExpanded ? (
         <tr key={`${node.category.id}-details`} className="border-t border-slate-900/60">
-          <td colSpan={8} className="px-6 pb-5 pt-4">
+          <td colSpan={4} className="px-6 pb-5 pt-4">
             {isEditing ? (
               <form onSubmit={handleCategoryUpdate} className="space-y-4 text-xs">
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -674,32 +606,6 @@ export function IncomeManagementView() {
                     />
                   </label>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="flex flex-col gap-1">
-                    <span className="uppercase text-slate-500">Monthly budget (₹)</span>
-                    <input
-                      type="number"
-                      min={0}
-                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
-                      value={editingCategoryState.monthlyBudget}
-                      onChange={(event) =>
-                        setEditingCategoryState((prev) => ({ ...prev, monthlyBudget: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="uppercase text-slate-500">Yearly budget (₹)</span>
-                    <input
-                      type="number"
-                      min={0}
-                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
-                      value={editingCategoryState.yearlyBudget}
-                      onChange={(event) =>
-                        setEditingCategoryState((prev) => ({ ...prev, yearlyBudget: event.target.value }))
-                      }
-                    />
-                  </label>
-                </div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="submit"
@@ -718,35 +624,22 @@ export function IncomeManagementView() {
               </form>
             ) : (
               <div className="space-y-4 text-xs">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <div>
-                    <p className="text-slate-400">Planned this period</p>
-                    <p className="text-warning font-semibold">{formatCurrency(summary.plannedTotal)}</p>
+                    <p className="text-slate-400">Parent category</p>
+                    <p className="font-semibold text-slate-200">{parentLabel}</p>
                   </div>
                   <div>
-                    <p className="text-slate-400">Actual spend</p>
-                    <p className="text-danger font-semibold">{formatCurrency(summary.totalSpent)}</p>
+                    <p className="text-slate-400">Category type</p>
+                    <p className="font-semibold uppercase tracking-wide text-slate-200">{node.category.type}</p>
                   </div>
                   <div>
-                    <p className="text-slate-400">Recorded income</p>
-                    <p className="text-success font-semibold">{formatCurrency(summary.totalIncome)}</p>
-                  </div>
-                  <div>
-                    <p className="text-slate-400">Variance</p>
-                    <p className={variance >= 0 ? 'text-success font-semibold' : 'text-danger font-semibold'}>
-                      {formatCurrency(variance)}
-                    </p>
+                    <p className="text-slate-400">Direct children</p>
+                    <p className="font-semibold text-slate-200">{node.children.length}</p>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 text-[11px] text-slate-400">
-                  {typeof nodeBudget === 'number' ? (
-                    <span className="rounded-full bg-warning/10 px-2 py-1 text-warning">
-                      Budget baseline: {formatCurrency(nodeBudget)}
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-slate-800 px-2 py-1">No baseline budget</span>
-                  )}
-                  {node.category.tags.length > 0 &&
+                  {node.category.tags.length > 0 ? (
                     node.category.tags.map((tag) => (
                       <span
                         key={tag}
@@ -754,7 +647,10 @@ export function IncomeManagementView() {
                       >
                         #{tag}
                       </span>
-                    ))}
+                    ))
+                  ) : (
+                    <span className="rounded-full bg-slate-800 px-2 py-1 text-slate-300">No tags assigned</span>
+                  )}
                 </div>
                 {hasTransactions ? (
                   <div className="space-y-2">
@@ -809,8 +705,8 @@ export function IncomeManagementView() {
         <div className="space-y-2">
           <h2 className="text-2xl font-semibold">Income & Category Management</h2>
           <p className="text-sm text-slate-400">
-            Capture month-specific income variations, maintain category hierarchies with budgets, and enrich every node
-            with tags for future-scale analytics.
+            Capture month-specific income variations, maintain category hierarchies, and enrich every node with tags for
+            future-scale analytics.
           </p>
         </div>
         <nav
@@ -842,7 +738,7 @@ export function IncomeManagementView() {
           >
             <span className="block text-sm font-semibold">Category governance</span>
             <span className="mt-1 block text-xs text-slate-500">
-              Navigate directly to manage hierarchies, budgets, and tags that steer disciplined spending.
+              Navigate directly to manage hierarchies and tags that steer disciplined spending.
             </span>
           </button>
         </nav>
@@ -1137,8 +1033,8 @@ export function IncomeManagementView() {
           <div>
             <h3 className="text-lg font-semibold">Category governance</h3>
             <p className="text-xs text-slate-500">
-              Model hierarchies, tag bill categories for reminders, and embed monthly or annual budgets for variance
-              analysis.
+              Model hierarchies, tag bill categories for reminders, and keep category metadata tidy for downstream
+              analytics.
             </p>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-xs text-slate-400">
@@ -1250,26 +1146,6 @@ export function IncomeManagementView() {
                               placeholder="e.g. bill, essentials"
                             />
                           </label>
-                          <label role="cell" className="flex min-w-[12rem] flex-1 basis-44 flex-col gap-1 text-[11px] uppercase text-slate-500">
-                            <span>Monthly budget (₹)</span>
-                            <input
-                              type="number"
-                              min={0}
-                              className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200"
-                              value={draft.monthlyBudget}
-                              onChange={(event) => updateDraft(draft.id, 'monthlyBudget', event.target.value)}
-                            />
-                          </label>
-                          <label role="cell" className="flex min-w-[12rem] flex-1 basis-44 flex-col gap-1 text-[11px] uppercase text-slate-500">
-                            <span>Yearly budget (₹)</span>
-                            <input
-                              type="number"
-                              min={0}
-                              className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200"
-                              value={draft.yearlyBudget}
-                              onChange={(event) => updateDraft(draft.id, 'yearlyBudget', event.target.value)}
-                            />
-                          </label>
                         </div>
                       </div>
                     </div>
@@ -1368,11 +1244,7 @@ export function IncomeManagementView() {
                     <thead className="bg-slate-900/70 text-xs uppercase tracking-wide text-slate-400">
                       <tr>
                         <th className="px-4 py-3 text-left">Category</th>
-                        <th className="px-4 py-3 text-left">Baseline</th>
-                        <th className="px-4 py-3 text-left">Planned</th>
-                        <th className="px-4 py-3 text-left">Actual spend</th>
-                        <th className="px-4 py-3 text-left">Income</th>
-                        <th className="px-4 py-3 text-left">Variance</th>
+                        <th className="px-4 py-3 text-left">Parent</th>
                         <th className="px-4 py-3 text-left">Tags</th>
                         <th className="px-4 py-3 text-right">Actions</th>
                       </tr>
