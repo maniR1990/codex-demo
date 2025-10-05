@@ -1,8 +1,97 @@
+import type { JSX } from 'react';
 import type { SmartBudgetingController } from '../hooks/useSmartBudgetingController';
 
 interface NavigatorFiltersProps {
   categories: SmartBudgetingController['categories'];
 }
+
+const statusIcons: Record<'all' | 'over' | 'under' | 'not-spent', JSX.Element> = {
+  all: (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden>
+      <circle cx="5" cy="7" r="2" className="fill-current opacity-90" />
+      <circle cx="10" cy="13" r="2" className="fill-current opacity-60" />
+      <circle cx="15" cy="7" r="2" className="fill-current opacity-40" />
+    </svg>
+  ),
+  over: (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden>
+      <path
+        d="M4 12.5 9 7.5l3 3 4-4.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="m14.5 6.5 2 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
+  under: (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden>
+      <path
+        d="M4 7.5 9 12.5l3-3 4 4.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="m14.5 13.5 2 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
+  'not-spent': (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden>
+      <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M10 5v5l3 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+};
+
+const viewIcons: Record<'category' | 'priority', JSX.Element> = {
+  category: (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden>
+      <path
+        d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9l2 2.5h3.5A1.5 1.5 0 0 1 16 8v6.5A1.5 1.5 0 0 1 14.5 16h-9A1.5 1.5 0 0 1 4 14.5Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
+  priority: (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden>
+      <path
+        d="m10 3 1.9 3.8 4.1.6-3 3 0.7 4.3L10 12.8 6.3 14.7 7 10.4l-3-3 4.1-.6Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+};
+
+const searchIcon = (
+  <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden>
+    <circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    <path d="m13.5 13.5 3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+  </svg>
+);
+
+const resetIcon = (
+  <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden>
+    <path
+      d="M5.5 6A5.5 5.5 0 1 1 4 11"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path d="M6 2.5 5 6l3.5-.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
 export function NavigatorFilters({ categories }: NavigatorFiltersProps) {
   const {
@@ -18,8 +107,8 @@ export function NavigatorFilters({ categories }: NavigatorFiltersProps) {
   } = categories;
 
   return (
-    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <div className="space-y-2">
+    <section className="flex flex-wrap items-end gap-4">
+      <div className="flex min-w-[220px] flex-col gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Navigator filter</span>
         <div className="flex flex-wrap gap-2">
           {navigatorFilterOptions.map((option) => (
@@ -27,16 +116,17 @@ export function NavigatorFilters({ categories }: NavigatorFiltersProps) {
               key={option.key}
               type="button"
               onClick={() => setNavigatorFilter(option.key)}
-              className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+              className={`flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold transition ${
                 navigatorFilter === option.key ? 'bg-accent text-slate-900' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
               }`}
             >
-              {option.label}
+              <span className="text-current [&>svg]:h-4 [&>svg]:w-4">{statusIcons[option.key]}</span>
+              <span className="whitespace-nowrap">{option.label}</span>
             </button>
           ))}
         </div>
       </div>
-      <div className="space-y-2">
+      <div className="flex min-w-[200px] flex-col gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Navigator view</span>
         <div className="flex flex-wrap gap-2">
           {navigatorViewOptions.map((option) => (
@@ -44,34 +134,39 @@ export function NavigatorFilters({ categories }: NavigatorFiltersProps) {
               key={option.key}
               type="button"
               onClick={() => setNavigatorView(option.key)}
-              className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+              className={`flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold transition ${
                 navigatorView === option.key ? 'bg-accent text-slate-900' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
               }`}
             >
-              {option.label}
+              <span className="text-current [&>svg]:h-4 [&>svg]:w-4">{viewIcons[option.key]}</span>
+              <span className="whitespace-nowrap">{option.label}</span>
             </button>
           ))}
         </div>
       </div>
-      <div className="space-y-2">
+      <div className="flex min-w-[260px] flex-1 flex-col gap-2">
         <label className="text-xs font-semibold uppercase tracking-wide text-slate-400" htmlFor="budgeting-search">
           Search
         </label>
-        <div className="flex flex-wrap gap-2">
-          <input
-            id="budgeting-search"
-            type="search"
-            placeholder="Search categories or items"
-            value={categorySearchTerm}
-            onChange={(event) => setCategorySearchTerm(event.target.value)}
-            className="min-w-[200px] flex-1 rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 focus:border-accent focus:outline-none"
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[220px] flex-1">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">{searchIcon}</span>
+            <input
+              id="budgeting-search"
+              type="search"
+              placeholder="Search categories or items"
+              value={categorySearchTerm}
+              onChange={(event) => setCategorySearchTerm(event.target.value)}
+              className="w-full rounded-lg border border-slate-700 bg-slate-950/70 py-2 pl-9 pr-3 text-sm text-slate-100 transition focus:border-accent focus:outline-none"
+            />
+          </div>
           <button
             type="button"
             onClick={handleResetFilters}
-            className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500"
+            className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500"
           >
-            Reset
+            <span className="text-current [&>svg]:h-4 [&>svg]:w-4">{resetIcon}</span>
+            <span className="whitespace-nowrap">Reset</span>
           </button>
         </div>
       </div>
