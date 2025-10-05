@@ -40,31 +40,20 @@ export default function App() {
     setIsNavOpen(false);
   }, [location.pathname]);
 
-  const headerRightSlot = useMemo(
-    () => (
-      <>
-        <OfflineSyncStatus />
-        {!isInitialised && hasDismissedInitialSetup ? (
-          <Button
-            type="button"
-            onClick={requestInitialSetup}
-            variant="ghost"
-            className="border border-accent/50 text-accent hover:bg-accent/10"
-          >
-            Resume ledger setup
-          </Button>
-        ) : null}
-      </>
-    ),
-    [hasDismissedInitialSetup, isInitialised, requestInitialSetup]
-  );
-
-  const navigationItems = useMemo(
-    () =>
-      NAV_LINKS.map((link) => (
-        <NavItem key={link.to} to={link.to} end={link.end} label={link.label} />
-      )),
-    []
+  const headerRightSlot = (
+    <>
+      <OfflineSyncStatus />
+      {!isInitialised && hasDismissedInitialSetup ? (
+        <Button
+          type="button"
+          onClick={requestInitialSetup}
+          variant="ghost"
+          className="border border-accent/50 text-accent hover:bg-accent/10"
+        >
+          Resume ledger setup
+        </Button>
+      ) : null}
+    </>
   );
 
   return (
